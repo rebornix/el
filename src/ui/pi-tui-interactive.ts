@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { TextBuffer } from '../text-buffer.js';
 import { connectAhpClient } from '../protocol/connect.js';
 import type { AhpClient } from '../protocol/client.js';
-import type { IFetchTurnsResult, ISessionState, ISessionSummary, ITurn } from '../protocol/types/index.js';
+import { SessionClientState } from '../protocol/session-client-state.js';
+import type { IFetchTurnsResult, IAhpNotification, ISessionState, ISessionSummary, ITurn } from '../protocol/types/index.js';
 import { SessionStatus, TurnState } from '../protocol/types/index.js';
 import { handleSessionKey } from '../views/session-key-handler.js';
 import { handleSessionListKey } from '../views/session-list-key-model.js';
@@ -204,6 +205,8 @@ export async function runPiTuiInteractiveScaffold(options?: {
   let sessionState = createInteractiveScaffoldState();
   let sessions: ISessionSummary[] = [];
   let sessionListStatus: string | undefined = 'Loading sessions…';
+  const liveState = new SessionClientState();
+  liveState.setClientId(clientId);
   let createProviders: string[] = [];
   let createProviderIndex = 0;
   let createFolderUri = 'file:///';
@@ -227,6 +230,9 @@ export async function runPiTuiInteractiveScaffold(options?: {
     client = conn.client;
     disconnect = conn.disconnect;
     const initialized = await client.initialize(clientId, ['agenthost:/root']);
+    for (const snap of initialized.snapshots) {
+      liveState.handleSnapshot(snap);
+    }
     defaultDirectory = initialized.defaultDirectory;
     const rootSnapshot = initialized.snapshots.find((s) => s.resource === 'agenthost:/root');
     const rootState = (rootSnapshot?.state ?? null) as import('../protocol/types/index.js').IRootState | null;
@@ -237,6 +243,26 @@ export async function runPiTuiInteractiveScaffold(options?: {
 
     const listed = await client.listSessions();
     sessions = listed.items;
+
+    client.on('notification', (n: IAhpNotification) => {
+      if (n.method === 'action') {
+        liveState.receiveEnvelope(n.params);
+        const current = liveState.getSessionState(sessionState.summary.resource);
+        if (current) {
+          sessionState = current;
+          render();
+        }
+        return;
+      }
+
+      if (n.method === 'notification') {
+        const notif = n.params.notification;
+        if (notif.type === 'notify/sessionAdded') {
+          sessions = [notif.summary, ...sessions];
+          render();
+        }
+      }
+    });
     if (createProviders.length === 0) {
       createProviders = Array.from(new Set(sessions.map((s) => s.provider).filter(Boolean)));
     }
@@ -381,24 +407,14 @@ export async function runPiTuiInteractiveScaffold(options?: {
           console.warn(`[el] session resource normalized: ${summary.resource} -> ${snap.resource}`);
         }
 
-        const snapState = snap.state as Partial<ISessionState>;
-        if (snapState && snapState.summary && Array.isArray(snapState.turns)) {
-          sessionState = {
-            ...sessionState,
-            ...snapState,
-            summary: snapState.summary as ISessionSummary,
-            turns: snapState.turns,
-          } as ISessionState;
+        liveState.handleSnapshot(snap);
+        const fromLive = liveState.getSessionState(snap.resource);
+        if (fromLive) {
+          sessionState = fromLive;
         }
 
         const turns = await client.fetchTurns({ session: snap.resource, limit: 50 });
-        sessionState = applyFetchedTurns(
-          {
-            ...sessionState,
-            summary: (snapState.summary as ISessionSummary) ?? summary,
-          },
-          turns,
-        );
+        sessionState = applyFetchedTurns(sessionState, turns);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[el] failed to open session:', msg);
@@ -587,15 +603,19 @@ export async function runPiTuiInteractiveScaffold(options?: {
           };
         }
 
-        // Always show immediate local progress; server turns will replace this on refresh.
-        sessionState = appendOptimisticUserTurn(sessionState, text);
-
         if (shouldDispatch && client) {
           try {
             const optimistic = buildTurnStartedAction(sessionState.summary.resource, text);
-            client.dispatchAction(Date.now(), optimistic);
+            const clientSeq = liveState.applyOptimistic(optimistic);
+            const optimisticState = liveState.getSessionState(sessionState.summary.resource);
+            if (optimisticState) {
+              sessionState = optimisticState;
+            } else {
+              sessionState = appendOptimisticUserTurn(sessionState, text);
+            }
+            client.dispatchAction(clientSeq, optimistic);
 
-            const refreshDelays = [250, 1000, 2500] as const;
+            const refreshDelays = [500, 1500, 3000] as const;
             for (const delay of refreshDelays) {
               setTimeout(async () => {
                 try {
@@ -609,7 +629,10 @@ export async function runPiTuiInteractiveScaffold(options?: {
             }
           } catch (err) {
             console.error('[el] dispatch failed:', err instanceof Error ? err.message : String(err));
+            sessionState = appendOptimisticUserTurn(sessionState, text);
           }
+        } else {
+          sessionState = appendOptimisticUserTurn(sessionState, text);
         }
 
         scrollLineOffset = 0;
