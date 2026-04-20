@@ -16,7 +16,7 @@ import { renderPiTuiPreview } from './pi-tui-preview.js';
 import { mapKeypressToPiEvent, type KeypressLike } from './interactive-mode.js';
 import { createInteractiveScaffoldState, appendScaffoldTurn } from './pi-tui-interactive-state.js';
 import { shouldDispatchInteractiveTurns } from './interactive-send-mode.js';
-import { dispatchInteractiveTurn } from './pi-tui-dispatch.js';
+import { buildTurnStartedAction } from './pi-tui-dispatch.js';
 
 type ScreenMode = 'session-list' | 'create-agent' | 'create-folder' | 'session';
 
@@ -40,6 +40,22 @@ function toSingleLineTitle(raw: string | undefined, max = 72): string {
 
   if (base.length <= max) return base;
   return `${base.slice(0, Math.max(1, max - 1))}…`;
+}
+
+function looksLikeGenericTitle(title: string | undefined): boolean {
+  if (!title) return true;
+  const t = title.trim();
+  if (!t) return true;
+  if (/^session$/i.test(t)) return true;
+  if (/^[a-z]+:\/\//i.test(t) || /^[a-z]+:\//i.test(t)) return true;
+  return false;
+}
+
+function firstPromptTitle(text: string, max = 64): string {
+  const oneLine = text.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!oneLine) return 'New session';
+  if (oneLine.length <= max) return oneLine;
+  return `${oneLine.slice(0, max - 1)}…`;
 }
 
 function folderNameFromSummary(s: ISessionSummary): string {
@@ -397,9 +413,15 @@ export async function runPiTuiInteractiveScaffold(options?: {
         const listed = await client.listSessions();
         sessions = listed.items;
         sessionListStatus = sessions.length === 0 ? 'No sessions yet. Select "Create new session".' : undefined;
-        selectedIndex = sessions.length > 0 ? sessions.length : 0;
+        const createdIdx = sessions.findIndex((s) => s.resource === sessionUri);
+        selectedIndex = createdIdx >= 0 ? createdIdx + 1 : (sessions.length > 0 ? sessions.length : 0);
         mode = 'session-list';
         createFolderStatus = undefined;
+
+        if (selectedIndex > 0) {
+          await openSelectedSession();
+          return;
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[el] failed to create session:', msg);
@@ -534,18 +556,41 @@ export async function runPiTuiInteractiveScaffold(options?: {
 
       if (action.type === 'scroll') scrollLineOffset = action.offset;
       if (action.type === 'send') {
-        if (shouldDispatch) {
-          void dispatchInteractiveTurn({
-            serverUrl: options?.serverUrl,
-            tunnelToken: options?.tunnelToken,
-            tunnelAuth: options?.tunnelAuth,
-            session: sessionState.summary.resource,
-            text: action.text,
-            clientId,
-          });
+        const text = action.text;
+
+        if (shouldDispatch && client) {
+          try {
+            if (looksLikeGenericTitle(sessionState.summary.title)) {
+              sessionState = {
+                ...sessionState,
+                summary: {
+                  ...sessionState.summary,
+                  title: firstPromptTitle(text),
+                },
+              };
+            }
+
+            const optimistic = buildTurnStartedAction(sessionState.summary.resource, text);
+            client.dispatchAction(Date.now(), optimistic);
+
+            // Refresh turns shortly after dispatch to show real server response.
+            void (async () => {
+              try {
+                const turns = await client!.fetchTurns({ session: sessionState.summary.resource, limit: 50 });
+                sessionState = applyFetchedTurns(sessionState, turns);
+                render();
+              } catch (err) {
+                console.error('[el] refresh after send failed:', err instanceof Error ? err.message : String(err));
+              }
+            })();
+          } catch (err) {
+            console.error('[el] dispatch failed:', err instanceof Error ? err.message : String(err));
+            sessionState = appendScaffoldTurn(sessionState, text);
+          }
+        } else {
+          sessionState = appendScaffoldTurn(sessionState, text);
         }
 
-        sessionState = appendScaffoldTurn(sessionState, action.text);
         scrollLineOffset = 0;
       }
       render();
