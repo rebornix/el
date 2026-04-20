@@ -8,6 +8,9 @@ import { SessionStatus } from '../protocol/types/index.js';
 import { handleSessionKey } from '../views/session-key-handler.js';
 import { handleSessionListKey } from '../views/session-list-key-model.js';
 import { computeSessionListWindow } from '../views/session-list-model.js';
+import { getCreateSessionAgents, nextCreateSessionIndex } from '../views/create-session-model.js';
+import { buildFolderDisplayEntries, computeFolderWindow } from '../views/folder-picker-model.js';
+import { handleFolderPickerKey } from '../views/folder-picker-key-model.js';
 import { uriToDisplayPath } from '../uri-helpers.js';
 import { renderPiTuiPreview } from './pi-tui-preview.js';
 import { mapKeypressToPiEvent, type KeypressLike } from './interactive-mode.js';
@@ -15,7 +18,7 @@ import { createInteractiveScaffoldState, appendScaffoldTurn } from './pi-tui-int
 import { shouldDispatchInteractiveTurns } from './interactive-send-mode.js';
 import { dispatchInteractiveTurn } from './pi-tui-dispatch.js';
 
-type ScreenMode = 'session-list' | 'session';
+type ScreenMode = 'session-list' | 'create-agent' | 'create-folder' | 'session';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
 
@@ -45,6 +48,61 @@ function folderNameFromSummary(s: ISessionSummary): string {
   const path = uriToDisplayPath(wd);
   const parts = path.split('/').filter(Boolean);
   return parts[parts.length - 1] ?? '/';
+}
+
+function renderCreateAgentScreen(params: {
+  providers: string[];
+  selectedIndex: number;
+  statusMessage?: string;
+}): string {
+  const out: string[] = [];
+  out.push('Create Session — Choose Agent');
+  out.push('');
+
+  if (params.providers.length === 0) {
+    out.push('No agents available');
+  } else {
+    params.providers.forEach((p, idx) => {
+      out.push(`${idx === params.selectedIndex ? '❯' : ' '} ${p}`);
+    });
+  }
+
+  out.push('');
+  if (params.statusMessage) out.push(params.statusMessage);
+  out.push('↑/↓ select · Enter next · Esc back');
+  return out.join('\n');
+}
+
+function renderFolderPickerScreen(params: {
+  currentUri: string;
+  entries: { name: string; display: string; isDir: boolean }[];
+  selectedIndex: number;
+  rows: number;
+  statusMessage?: string;
+}): string {
+  const out: string[] = [];
+  out.push('Create Session — Choose Folder');
+  out.push(uriToDisplayPath(params.currentUri));
+  out.push('');
+
+  const window = computeFolderWindow({
+    displayEntries: params.entries,
+    selectedIndex: params.selectedIndex,
+    maxHeight: params.rows,
+  });
+
+  if (window.hasAbove) out.push('↑ more');
+  for (let i = window.startIdx; i < window.endIdx; i++) {
+    const e = params.entries[i];
+    if (!e) continue;
+    out.push(`${i === params.selectedIndex ? '❯' : ' '} ${e.display}`);
+  }
+  if (window.hasBelow) out.push('↓ more');
+
+  out.push('');
+  if (params.statusMessage) out.push(params.statusMessage);
+  out.push('Tab select current · Enter open dir · Esc back');
+  return out.join('\n');
 }
 
 function renderSessionListScreen(params: {
@@ -111,6 +169,12 @@ export async function runPiTuiInteractiveScaffold(options?: {
   let sessionState = createInteractiveScaffoldState();
   let sessions: ISessionSummary[] = [];
   let sessionListStatus: string | undefined = 'Loading sessions…';
+  let createProviders: string[] = [];
+  let createProviderIndex = 0;
+  let createFolderUri = 'file:///';
+  let createFolderEntries: { name: string; display: string; isDir: boolean }[] = [];
+  let createFolderIndex = 0;
+  let createFolderStatus: string | undefined;
   let spinnerIndex = 0;
   let spinnerTimer: ReturnType<typeof setInterval> | undefined;
   let defaultDirectory: string | undefined;
@@ -130,11 +194,17 @@ export async function runPiTuiInteractiveScaffold(options?: {
     const initialized = await client.initialize(clientId, ['agenthost:/root']);
     defaultDirectory = initialized.defaultDirectory;
     const rootSnapshot = initialized.snapshots.find((s) => s.resource === 'agenthost:/root');
-    const rootState = rootSnapshot?.state as { agents?: Array<{ provider: string }> } | undefined;
-    preferredProvider = rootState?.agents?.[0]?.provider;
+    const rootState = (rootSnapshot?.state ?? null) as import('../protocol/types/index.js').IRootState | null;
+    const agents = getCreateSessionAgents(rootState);
+    createProviders = agents.map((a) => a.provider);
+    preferredProvider = createProviders[0];
+    createFolderUri = defaultDirectory ?? createFolderUri;
 
     const listed = await client.listSessions();
     sessions = listed.items;
+    if (createProviders.length === 0) {
+      createProviders = Array.from(new Set(sessions.map((s) => s.provider).filter(Boolean)));
+    }
     sessionListStatus = sessions.length === 0 ? 'No sessions yet. Select "Create new session".' : undefined;
     selectedIndex = sessions.length > 0 ? 1 : 0;
     if (!preferredProvider) {
@@ -147,6 +217,26 @@ export async function runPiTuiInteractiveScaffold(options?: {
     selectedIndex = 0;
   } finally {
     stopSpinner();
+  }
+
+  async function loadCreateFolderEntries(): Promise<void> {
+    if (!client) return;
+    createFolderStatus = 'Loading folders…';
+    startSpinner();
+    render();
+    try {
+      const listed = await client.resourceList(createFolderUri as import('../protocol/types/index.js').URI);
+      createFolderEntries = buildFolderDisplayEntries(listed.entries);
+      createFolderIndex = Math.min(createFolderIndex, Math.max(0, createFolderEntries.length - 1));
+      createFolderStatus = undefined;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      createFolderEntries = [{ name: '..', display: '..', isDir: true }];
+      createFolderIndex = 0;
+      createFolderStatus = `Failed to load folder: ${msg}`;
+    } finally {
+      stopSpinner();
+    }
   }
 
   function startSpinner(): void {
@@ -173,6 +263,30 @@ export async function runPiTuiInteractiveScaffold(options?: {
         selectedIndex,
         rows: stdout.rows || 24,
         statusMessage: sessionListStatus ? `${spinner}${sessionListStatus}` : undefined,
+      }));
+      stdout.write('\n');
+      return;
+    }
+
+    if (mode === 'create-agent') {
+      const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
+      stdout.write(renderCreateAgentScreen({
+        providers: createProviders,
+        selectedIndex: createProviderIndex,
+        statusMessage: createFolderStatus ? `${spinner}${createFolderStatus}` : undefined,
+      }));
+      stdout.write('\n');
+      return;
+    }
+
+    if (mode === 'create-folder') {
+      const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
+      stdout.write(renderFolderPickerScreen({
+        currentUri: createFolderUri,
+        entries: createFolderEntries,
+        selectedIndex: createFolderIndex,
+        rows: stdout.rows || 24,
+        statusMessage: createFolderStatus ? `${spinner}${createFolderStatus}` : undefined,
       }));
       stdout.write('\n');
       return;
@@ -268,24 +382,28 @@ export async function runPiTuiInteractiveScaffold(options?: {
         return;
       }
 
-      const provider = preferredProvider ?? sessions[0]?.provider ?? 'copilot';
+      const provider = createProviders[createProviderIndex] ?? preferredProvider ?? sessions[0]?.provider ?? 'copilot';
       const sessionUri = `${provider}:/${randomUUID()}`;
 
-      sessionListStatus = 'Creating session...';
+      createFolderStatus = 'Creating session...';
       startSpinner();
       try {
         await client.createSession({
           session: sessionUri,
           provider,
-          workingDirectory: defaultDirectory,
+          workingDirectory: createFolderUri || defaultDirectory,
         });
 
         const listed = await client.listSessions();
         sessions = listed.items;
         sessionListStatus = sessions.length === 0 ? 'No sessions yet. Select "Create new session".' : undefined;
         selectedIndex = sessions.length > 0 ? sessions.length : 0;
+        mode = 'session-list';
+        createFolderStatus = undefined;
       } catch (err) {
-        console.error('[el] failed to create session:', err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[el] failed to create session:', msg);
+        createFolderStatus = `Failed to create session: ${msg}`;
       } finally {
         stopSpinner();
       }
@@ -317,12 +435,80 @@ export async function runPiTuiInteractiveScaffold(options?: {
         }
 
         if (action.type === 'create') {
-          void createSelectedSession();
+          createProviderIndex = 0;
+          createFolderUri = defaultDirectory ?? createFolderUri;
+          createFolderStatus = undefined;
+          mode = 'create-agent';
+          render();
           return;
         }
 
         if (action.type === 'select') {
           void openSelectedSession();
+          return;
+        }
+
+        render();
+        return;
+      }
+
+      if (mode === 'create-agent') {
+        if (event.key.escape) {
+          mode = 'session-list';
+          render();
+          return;
+        }
+        if (event.key.upArrow) {
+          createProviderIndex = nextCreateSessionIndex(createProviderIndex, 'up', createProviders.length);
+          render();
+          return;
+        }
+        if (event.key.downArrow) {
+          createProviderIndex = nextCreateSessionIndex(createProviderIndex, 'down', createProviders.length);
+          render();
+          return;
+        }
+        if (event.key.return) {
+          mode = 'create-folder';
+          createFolderIndex = 0;
+          void loadCreateFolderEntries().then(() => render());
+          render();
+          return;
+        }
+        render();
+        return;
+      }
+
+      if (mode === 'create-folder') {
+        const dirs = createFolderEntries.filter((e) => e.isDir && e.name !== '..').map((e) => ({ name: e.name }));
+        const action = handleFolderPickerKey({
+          key: event.key,
+          selectedIdx: createFolderIndex,
+          totalEntries: Math.max(1, createFolderEntries.length),
+          loading: !!spinnerTimer,
+          currentUri: createFolderUri as import('../protocol/types/index.js').URI,
+          sortedDirs: dirs,
+        });
+
+        if (action.type === 'back') {
+          mode = 'create-agent';
+          render();
+          return;
+        }
+        if (action.type === 'move') {
+          createFolderIndex = action.selectedIndex;
+          render();
+          return;
+        }
+        if (action.type === 'navigate') {
+          createFolderUri = action.uri;
+          createFolderIndex = 0;
+          void loadCreateFolderEntries().then(() => render());
+          render();
+          return;
+        }
+        if (action.type === 'select-current') {
+          void createSelectedSession();
           return;
         }
 
