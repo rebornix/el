@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { TextBuffer } from '../text-buffer.js';
 import { connectAhpClient } from '../protocol/connect.js';
 import type { AhpClient } from '../protocol/client.js';
-import type { IFetchTurnsResult, ISessionState, ISessionSummary } from '../protocol/types/index.js';
-import { SessionStatus } from '../protocol/types/index.js';
+import type { IFetchTurnsResult, ISessionState, ISessionSummary, ITurn } from '../protocol/types/index.js';
+import { SessionStatus, TurnState } from '../protocol/types/index.js';
 import { handleSessionKey } from '../views/session-key-handler.js';
 import { handleSessionListKey } from '../views/session-list-key-model.js';
 import { computeSessionListWindow } from '../views/session-list-model.js';
@@ -14,7 +14,7 @@ import { handleFolderPickerKey } from '../views/folder-picker-key-model.js';
 import { uriToDisplayPath } from '../uri-helpers.js';
 import { renderPiTuiPreview } from './pi-tui-preview.js';
 import { mapKeypressToPiEvent, type KeypressLike } from './interactive-mode.js';
-import { createInteractiveScaffoldState, appendScaffoldTurn } from './pi-tui-interactive-state.js';
+import { createInteractiveScaffoldState } from './pi-tui-interactive-state.js';
 import { shouldDispatchInteractiveTurns } from './interactive-send-mode.js';
 import { buildTurnStartedAction } from './pi-tui-dispatch.js';
 
@@ -26,6 +26,25 @@ function applyFetchedTurns(state: ISessionState, turns: IFetchTurnsResult): ISes
   return {
     ...state,
     turns: turns.turns,
+  };
+}
+
+function appendOptimisticUserTurn(state: ISessionState, text: string): ISessionState {
+  const nextTurn: ITurn = {
+    id: `local-${Date.now()}`,
+    state: TurnState.Complete,
+    userMessage: { text },
+    responseParts: [],
+    usage: undefined,
+  };
+
+  return {
+    ...state,
+    turns: [...state.turns, nextTurn],
+    summary: {
+      ...state.summary,
+      modifiedAt: Date.now(),
+    },
   };
 }
 
@@ -558,37 +577,39 @@ export async function runPiTuiInteractiveScaffold(options?: {
       if (action.type === 'send') {
         const text = action.text;
 
+        if (looksLikeGenericTitle(sessionState.summary.title)) {
+          sessionState = {
+            ...sessionState,
+            summary: {
+              ...sessionState.summary,
+              title: firstPromptTitle(text),
+            },
+          };
+        }
+
+        // Always show immediate local progress; server turns will replace this on refresh.
+        sessionState = appendOptimisticUserTurn(sessionState, text);
+
         if (shouldDispatch && client) {
           try {
-            if (looksLikeGenericTitle(sessionState.summary.title)) {
-              sessionState = {
-                ...sessionState,
-                summary: {
-                  ...sessionState.summary,
-                  title: firstPromptTitle(text),
-                },
-              };
-            }
-
             const optimistic = buildTurnStartedAction(sessionState.summary.resource, text);
             client.dispatchAction(Date.now(), optimistic);
 
-            // Refresh turns shortly after dispatch to show real server response.
-            void (async () => {
-              try {
-                const turns = await client!.fetchTurns({ session: sessionState.summary.resource, limit: 50 });
-                sessionState = applyFetchedTurns(sessionState, turns);
-                render();
-              } catch (err) {
-                console.error('[el] refresh after send failed:', err instanceof Error ? err.message : String(err));
-              }
-            })();
+            const refreshDelays = [250, 1000, 2500] as const;
+            for (const delay of refreshDelays) {
+              setTimeout(async () => {
+                try {
+                  const turns = await client.fetchTurns({ session: sessionState.summary.resource, limit: 50 });
+                  sessionState = applyFetchedTurns(sessionState, turns);
+                  render();
+                } catch {
+                  // best-effort refresh
+                }
+              }, delay);
+            }
           } catch (err) {
             console.error('[el] dispatch failed:', err instanceof Error ? err.message : String(err));
-            sessionState = appendScaffoldTurn(sessionState, text);
           }
-        } else {
-          sessionState = appendScaffoldTurn(sessionState, text);
         }
 
         scrollLineOffset = 0;
