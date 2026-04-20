@@ -35,6 +35,10 @@ describe('parentUri', () => {
     assert.equal(parentUri('file:///home/user'), 'file:///home');
   });
 
+  it('preserves single-slash custom scheme', () => {
+    assert.equal(parentUri('agenthost:/workspace/project'), 'agenthost:/workspace');
+  });
+
   it('navigates from nested path', () => {
     assert.equal(parentUri('file:///a/b/c'), 'file:///a/b');
   });
@@ -51,6 +55,10 @@ describe('parentUri', () => {
 describe('childUri', () => {
   it('appends child name to URI', () => {
     assert.equal(childUri('file:///home/user', 'Code'), 'file:///home/user/Code');
+  });
+
+  it('preserves single-slash custom scheme', () => {
+    assert.equal(childUri('agenthost:/workspace', 'project'), 'agenthost:/workspace/project');
   });
 
   it('handles root directory', () => {
