@@ -1,0 +1,297 @@
+/**
+ * Converts AHP turns into flat arrays of styled lines for
+ * line-level viewport clipping. No React dependency.
+ */
+
+import type { ITurn, IActiveTurn, IResponsePart, IToolResultContent } from './protocol/types/index.js';
+import {
+  ResponsePartKind,
+  ToolCallStatus,
+  ToolResultContentType,
+} from './protocol/types/index.js';
+
+export type LineKind =
+  | 'user-label'
+  | 'user-text'
+  | 'gap'
+  | 'markdown'
+  | 'tool-status'
+  | 'tool-result'
+  | 'reasoning'
+  | 'content-ref'
+  | 'turn-error'
+  | 'turn-cancel'
+  | 'streaming';
+
+export interface ContentLine {
+  text: string;
+  kind: LineKind;
+}
+
+interface RenderedContent {
+  /** Flat array of all lines across all turns */
+  lines: ContentLine[];
+  /** Number of lines per turn (same order as input turns) */
+  turnLineCounts: number[];
+  /** Starting line index for each turn */
+  turnStartLines: number[];
+}
+
+interface ViewportInfo {
+  /** First visible line index (inclusive) */
+  startLine: number;
+  /** Last visible line index (exclusive) */
+  endLine: number;
+  /** Index of first visible turn */
+  firstTurnIdx: number;
+  /** Index of last visible turn */
+  lastTurnIdx: number;
+  /** Total content lines */
+  totalLines: number;
+  /** Maximum scroll offset (lines from bottom) */
+  maxScroll: number;
+  /** Content exists above viewport */
+  hasAbove: boolean;
+  /** Content exists below viewport */
+  hasBelow: boolean;
+  /** Scroll position as percentage (100 = bottom, 0 = top) */
+  scrollPercent: number;
+}
+
+export function wrapText(text: string, width: number): string[] {
+  if (width <= 0) return [text];
+  const lines: string[] = [];
+  for (const rawLine of text.split('\n')) {
+    if (rawLine.length === 0) {
+      lines.push('');
+    } else if (rawLine.length <= width) {
+      lines.push(rawLine);
+    } else {
+      for (let i = 0; i < rawLine.length; i += width) {
+        lines.push(rawLine.slice(i, i + width));
+      }
+    }
+  }
+  return lines;
+}
+
+function truncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen - 1) + '…';
+}
+
+function toolStatusIcon(status: string): string {
+  switch (status) {
+    case ToolCallStatus.Completed: return '✓';
+    case ToolCallStatus.Running: return '⟳';
+    case ToolCallStatus.Streaming: return '…';
+    case ToolCallStatus.PendingConfirmation: return '⏳';
+    case ToolCallStatus.PendingResultConfirmation: return '⏳';
+    case ToolCallStatus.Cancelled: return '✗';
+    default: return '?';
+  }
+}
+
+export function renderTurnToLines(turn: ITurn | IActiveTurn, termCols: number): ContentLine[] {
+  const lines: ContentLine[] = [];
+  // Leave room for margins/borders
+  const contentWidth = Math.max(20, termCols - 6);
+
+  // ── User message ──
+  lines.push({ text: '  You', kind: 'user-label' });
+  const userText = turn.userMessage.text || '';
+  for (const wrapped of wrapText(userText, contentWidth)) {
+    lines.push({ text: '  │ ' + wrapped, kind: 'user-text' });
+  }
+  lines.push({ text: '', kind: 'gap' });
+
+  // ── Assistant response ──
+  lines.push({ text: '  Assistant', kind: 'user-label' });
+  for (const part of turn.responseParts) {
+    renderPartToLines(part, contentWidth, lines);
+  }
+
+  // ── Turn state indicators ──
+  if ('state' in turn) {
+    const t = turn as ITurn;
+    if (t.state === 'cancelled') {
+      lines.push({ text: '⚠ Turn cancelled', kind: 'turn-cancel' });
+    }
+    if (t.state === 'error') {
+      const errMsg = t.error ? `: ${t.error.message}` : '';
+      lines.push({ text: `✗ Turn failed${errMsg}`, kind: 'turn-error' });
+    }
+  }
+
+  // Gap between turns
+  lines.push({ text: '', kind: 'gap' });
+  return lines;
+}
+
+function renderPartToLines(part: IResponsePart, contentWidth: number, lines: ContentLine[]): void {
+  switch (part.kind) {
+    case ResponsePartKind.Markdown: {
+      if (!part.content) return;
+      for (const wrapped of wrapText(part.content, contentWidth)) {
+        lines.push({ text: '  │ ' + wrapped, kind: 'markdown' });
+      }
+      return;
+    }
+
+    case ResponsePartKind.ToolCall: {
+      const tc = part.toolCall;
+      const icon = toolStatusIcon(tc.status);
+      let label = `${icon} ${tc.displayName}`;
+      if ('invocationMessage' in tc && tc.invocationMessage) {
+        const msg = typeof tc.invocationMessage === 'string'
+          ? tc.invocationMessage
+          : tc.invocationMessage.markdown;
+        label += ` — ${truncate(msg, 80)}`;
+      }
+      lines.push({ text: '  │ ' + label, kind: 'tool-status' });
+
+      // Tool results
+      if ('content' in tc && Array.isArray(tc.content)) {
+        for (const c of tc.content as IToolResultContent[]) {
+          renderToolResultToLines(c, contentWidth, lines);
+        }
+      }
+
+      // Tool error
+      if ('error' in tc && tc.error) {
+        const message = typeof tc.error === 'object' && tc.error && 'message' in tc.error
+          ? String((tc.error as { message?: string }).message ?? 'Error')
+          : 'Error';
+        lines.push({ text: `  │ ⚠ ${message}`, kind: 'turn-error' });
+      }
+      return;
+    }
+
+    case ResponsePartKind.Reasoning: {
+      if (!part.content) return;
+      lines.push({ text: `  │ 💭 ${truncate(part.content, 120)}`, kind: 'reasoning' });
+      return;
+    }
+
+    case ResponsePartKind.ContentRef: {
+      let label = `📎 ${part.uri}`;
+      if (part.contentType) label += ` (${part.contentType})`;
+      lines.push({ text: '  │ ' + label, kind: 'content-ref' });
+      return;
+    }
+  }
+}
+
+function renderToolResultToLines(c: IToolResultContent, contentWidth: number, lines: ContentLine[]): void {
+  switch (c.type) {
+    case ToolResultContentType.Text: {
+      const txt = truncate(c.text, 200);
+      for (const wrapped of wrapText(txt, contentWidth - 4)) {
+        lines.push({ text: '    ' + wrapped, kind: 'tool-result' });
+      }
+      return;
+    }
+    case ToolResultContentType.EmbeddedResource: {
+      lines.push({
+        text: `    📦 embedded ${c.contentType || ''} (${c.data?.length || 0} bytes b64)`,
+        kind: 'tool-result',
+      });
+      return;
+    }
+    case ToolResultContentType.Resource: {
+      let label = `    📎 ${c.uri}`;
+      if (c.contentType) label += ` (${c.contentType})`;
+      lines.push({ text: label, kind: 'tool-result' });
+      return;
+    }
+    case ToolResultContentType.FileEdit: {
+      let label = '    📝 ';
+      const before = c.before?.uri;
+      const after = c.after?.uri;
+      if (!before && after) label += `created ${after}`;
+      else if (before && !after) label += `deleted ${before}`;
+      else if (before && after && before !== after) label += `renamed ${before} → ${after}`;
+      else label += `edited ${after ?? before ?? 'file'}`;
+      if (c.diff) {
+        const parts: string[] = [];
+        if (c.diff.added) parts.push(`+${c.diff.added}`);
+        if (c.diff.removed) parts.push(`-${c.diff.removed}`);
+        if (parts.length) label += ` (${parts.join(', ')})`;
+      }
+      lines.push({ text: label, kind: 'tool-result' });
+      return;
+    }
+  }
+}
+
+export function renderAllTurns(
+  turns: readonly (ITurn | IActiveTurn)[],
+  termCols: number,
+): RenderedContent {
+  const allLines: ContentLine[] = [];
+  const turnLineCounts: number[] = [];
+  const turnStartLines: number[] = [];
+
+  for (const turn of turns) {
+    turnStartLines.push(allLines.length);
+    const turnLines = renderTurnToLines(turn, termCols);
+    turnLineCounts.push(turnLines.length);
+    allLines.push(...turnLines);
+  }
+
+  return { lines: allLines, turnLineCounts, turnStartLines };
+}
+
+/** Compute which lines are visible given scroll offset from bottom. */
+export function computeViewport(
+  totalLines: number,
+  turnStartLines: readonly number[],
+  turnLineCounts: readonly number[],
+  scrollLineOffset: number,
+  availableLines: number,
+): ViewportInfo {
+  const totalTurns = turnLineCounts.length;
+  const maxScroll = Math.max(0, totalLines - availableLines);
+  const clamped = Math.min(Math.max(0, scrollLineOffset), maxScroll);
+
+  // Viewport line range
+  const endLine = totalLines - clamped;
+  const startLine = Math.max(0, endLine - availableLines);
+
+  // Find which turns overlap [startLine, endLine)
+  let firstTurnIdx = 0;
+  let lastTurnIdx = Math.max(0, totalTurns - 1);
+
+  for (let i = 0; i < totalTurns; i++) {
+    const turnEnd = turnStartLines[i] + turnLineCounts[i];
+    if (turnEnd > startLine) {
+      firstTurnIdx = i;
+      break;
+    }
+  }
+
+  for (let i = totalTurns - 1; i >= 0; i--) {
+    if (turnStartLines[i] < endLine) {
+      lastTurnIdx = i;
+      break;
+    }
+  }
+
+  const hasAbove = startLine > 0;
+  const hasBelow = clamped > 0;
+  const scrollPercent = maxScroll > 0
+    ? Math.round(100 * (1 - clamped / maxScroll))
+    : 100;
+
+  return {
+    startLine,
+    endLine,
+    firstTurnIdx,
+    lastTurnIdx,
+    totalLines,
+    maxScroll,
+    hasAbove,
+    hasBelow,
+    scrollPercent,
+  };
+}

@@ -1,0 +1,5 @@
+# Keep published tarball runtime-only
+**/*.test.js
+**/*.test.d.ts
+**/*.test.js.map
+**/*.map
