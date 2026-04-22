@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPiTuiSessionScreen } from './pi-tui-session-screen.js';
+import { buildPiTuiSessionScreen, renderPiTuiSessionFrame } from './pi-tui-session-screen.js';
 
 function mkSessionState(overrides: Record<string, any> = {}) {
   return {
@@ -30,6 +30,7 @@ describe('buildPiTuiSessionScreen', () => {
     });
 
     assert.ok(screen.lines.length > 0);
+    assert.equal(screen.contentRows, 23);
     assert.equal(screen.inputLine, '> abc▊');
     assert.equal(screen.toolPrompt, undefined);
   });
@@ -63,6 +64,25 @@ describe('buildPiTuiSessionScreen', () => {
     });
 
     assert.equal(screen.toolPrompt?.displayName, 'Write File');
+    assert.equal(screen.contentRows, 22);
     assert.equal(screen.inputLine, undefined);
+  });
+
+  it('pads the session frame to the full terminal height with footer at bottom', () => {
+    const frame = renderPiTuiSessionFrame({
+      sessionState: mkSessionState(),
+      termCols: 80,
+      termRows: 8,
+      scrollLineOffset: 0,
+      inputBeforeCursor: '',
+      inputAfterCursor: '',
+      footerLine: 'Esc back · Ctrl+C or q to exit',
+    });
+
+    const lines = frame.split('\n');
+    assert.equal(lines.length, 8);
+    assert.equal(lines[7], 'Esc back · Ctrl+C or q to exit');
+    assert.equal(lines[6], '');
+    assert.equal(lines[5], '');
   });
 });

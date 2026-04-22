@@ -1,4 +1,5 @@
 import type { IDirectoryEntry } from '../protocol/types/index.js';
+import { computeSelectionWindow } from './selection-window.js';
 
 interface FolderDisplayEntry {
   name: string;
@@ -20,19 +21,21 @@ export function computeFolderWindow(params: {
   displayEntries: FolderDisplayEntry[];
   selectedIndex: number;
   maxHeight?: number;
+  windowRows?: number;
 }) {
-  const { displayEntries, selectedIndex, maxHeight } = params;
+  const { displayEntries, selectedIndex, maxHeight, windowRows } = params;
   const FIXED_OVERHEAD = 5;
-  const windowSize = maxHeight ? Math.max(5, maxHeight - FIXED_OVERHEAD) : displayEntries.length;
+  const resolvedWindowRows = windowRows ?? (maxHeight ? Math.max(5, maxHeight - FIXED_OVERHEAD) : displayEntries.length);
   const totalItems = displayEntries.length;
-  const halfWindow = Math.floor(windowSize / 2);
-  let startIdx = Math.max(0, selectedIndex - halfWindow);
-  const endIdx = Math.min(totalItems, startIdx + windowSize);
-  if (endIdx - startIdx < windowSize) startIdx = Math.max(0, endIdx - windowSize);
+  const window = computeSelectionWindow({
+    totalItems,
+    selectedIndex,
+    windowSize: resolvedWindowRows,
+  });
   return {
-    startIdx,
-    endIdx,
-    hasAbove: startIdx > 0,
-    hasBelow: endIdx < totalItems,
+    startIdx: window.startIdx,
+    endIdx: window.endIdx,
+    hasAbove: window.hasAbove,
+    hasBelow: window.hasBelow,
   };
 }

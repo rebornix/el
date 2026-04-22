@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildStartupTargetFrame,
   buildStartupTargetSpinnerUpdate,
+  renderStartupTargetScreen,
   type StartupTargetScreenState,
 } from './startup-target-screen.js';
 
@@ -34,7 +35,7 @@ describe('startup target screen', () => {
         ],
         statusMessage: 'Waiting for authorization...',
       },
-    }));
+    }), 10);
 
     assert.equal(frame.authStatusRow, 7);
     assert.match(frame.output, /^\x1b\[2J\x1b\[HConnect via Dev Tunnel/);
@@ -67,5 +68,31 @@ describe('startup target screen', () => {
     }), undefined);
 
     assert.equal(update, null);
+  });
+
+  it('anchors the menu hint at the bottom', () => {
+    const frame = renderStartupTargetScreen(mkState(), 7);
+    const lines = frame.replace(/^\x1b\[2J\x1b\[H/, '').split('\n');
+    assert.equal(lines.length, 7);
+    assert.equal(lines[6], '↑/↓ select · Enter confirm');
+  });
+
+  it('anchors the tunnel list hint at the bottom', () => {
+    const frame = renderStartupTargetScreen(mkState({
+      mode: 'tunnel-list',
+      tunnels: [{
+        tunnelId: 'abc',
+        name: 'abc',
+        clusterId: 'cluster',
+        labels: [],
+        online: true,
+        hostConnectionCount: 1,
+        tunnel: {} as never,
+      }],
+    }), 7);
+
+    const lines = frame.replace(/^\x1b\[2J\x1b\[H/, '').split('\n');
+    assert.equal(lines.length, 7);
+    assert.equal(lines[6], '↑/↓ select · Enter confirm · Esc back');
   });
 });

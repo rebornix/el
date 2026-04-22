@@ -8,12 +8,12 @@ import type { IFetchTurnsResult, IAhpNotification, ISessionState, ISessionSummar
 import { SessionStatus, TurnState } from '../protocol/types/index.js';
 import { handleSessionKey } from '../views/session-key-handler.js';
 import { handleSessionListKey } from '../views/session-list-key-model.js';
-import { computeSessionListWindow } from '../views/session-list-model.js';
 import { getCreateSessionAgents, nextCreateSessionIndex } from '../views/create-session-model.js';
-import { buildFolderDisplayEntries, computeFolderWindow } from '../views/folder-picker-model.js';
+import { buildFolderDisplayEntries } from '../views/folder-picker-model.js';
 import { handleFolderPickerKey } from '../views/folder-picker-key-model.js';
-import { uriToDisplayPath } from '../uri-helpers.js';
-import { renderPiTuiPreview } from './pi-tui-preview.js';
+import { buildPiTuiSessionScreen, renderPiTuiSessionFrame } from './pi-tui-session-screen.js';
+import { renderCreateAgentFrame, renderFolderPickerFrame } from './create-session-screens.js';
+import { renderSessionListFrame } from './session-list-screen.js';
 import { mapKeypressToPiEvent, type KeypressLike } from './interactive-mode.js';
 import { createInteractiveScaffoldState } from './pi-tui-interactive-state.js';
 import { shouldDispatchInteractiveTurns } from './interactive-send-mode.js';
@@ -76,114 +76,6 @@ function firstPromptTitle(text: string, max = 64): string {
   if (!oneLine) return 'New session';
   if (oneLine.length <= max) return oneLine;
   return `${oneLine.slice(0, max - 1)}…`;
-}
-
-function folderNameFromSummary(s: ISessionSummary): string {
-  const wd = s.workingDirectory;
-  if (!wd) return 'no-folder';
-  const path = uriToDisplayPath(wd);
-  const parts = path.split('/').filter(Boolean);
-  return parts[parts.length - 1] ?? '/';
-}
-
-function renderCreateAgentScreen(params: {
-  providers: string[];
-  selectedIndex: number;
-  statusMessage?: string;
-}): string {
-  const out: string[] = [];
-  out.push('Create Session — Choose Agent');
-  out.push('');
-
-  if (params.providers.length === 0) {
-    out.push('No agents available');
-  } else {
-    params.providers.forEach((p, idx) => {
-      out.push(`${idx === params.selectedIndex ? '❯' : ' '} ${p}`);
-    });
-  }
-
-  out.push('');
-  if (params.statusMessage) out.push(params.statusMessage);
-  out.push('↑/↓ select · Enter next · Esc back');
-  return out.join('\n');
-}
-
-function renderFolderPickerScreen(params: {
-  currentUri: string;
-  entries: { name: string; display: string; isDir: boolean }[];
-  selectedIndex: number;
-  rows: number;
-  statusMessage?: string;
-}): string {
-  const out: string[] = [];
-  out.push('Create Session — Choose Folder');
-  out.push(uriToDisplayPath(params.currentUri));
-  out.push('');
-
-  const window = computeFolderWindow({
-    displayEntries: params.entries,
-    selectedIndex: params.selectedIndex,
-    maxHeight: params.rows,
-  });
-
-  if (window.hasAbove) out.push('↑ more');
-  for (let i = window.startIdx; i < window.endIdx; i++) {
-    const e = params.entries[i];
-    if (!e) continue;
-    out.push(`${i === params.selectedIndex ? '❯' : ' '} ${e.display}`);
-  }
-  if (window.hasBelow) out.push('↓ more');
-
-  out.push('');
-  if (params.statusMessage) out.push(params.statusMessage);
-  out.push('Tab select current · Enter open dir · Esc back');
-  return out.join('\n');
-}
-
-function renderSessionListScreen(params: {
-  sessions: ISessionSummary[];
-  selectedIndex: number;
-  rows: number;
-  statusMessage?: string;
-}): string {
-  const { sessions, selectedIndex, rows, statusMessage } = params;
-  const window = computeSessionListWindow({
-    sessions,
-    rootState: null,
-    selectedIndex,
-    terminalRows: rows,
-  });
-
-  const out: string[] = [];
-  out.push('Sessions');
-  out.push('');
-
-  const items: Array<{ label: string }> = [
-    { label: 'Create new session' },
-    ...sessions.map((s) => {
-      const active = (s.status & SessionStatus.InProgress) === SessionStatus.InProgress;
-      const title = toSingleLineTitle(s.title, 44);
-      const folder = folderNameFromSummary(s);
-      const provider = s.provider || 'unknown';
-      return { label: `${active ? '◉' : '○'} ${title}  [${folder}] (${provider})` };
-    }),
-  ];
-
-  if (window.hasAbove) out.push('↑ more');
-
-  for (let i = window.startIdx; i < window.endIdx; i++) {
-    const item = items[i];
-    if (!item) continue;
-    out.push(`${i === selectedIndex ? '❯' : ' '} ${item.label}`);
-  }
-
-  if (window.hasBelow) out.push('↓ more');
-
-  out.push('');
-  if (statusMessage) out.push(statusMessage);
-  out.push('↑/↓ select · Enter open · q quit');
-  return out.join('\n');
 }
 
 export async function runPiTuiInteractiveScaffold(options?: {
@@ -319,7 +211,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
 
     if (mode === 'session-list') {
       const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
-      stdout.write(renderSessionListScreen({
+      stdout.write(renderSessionListFrame({
         sessions,
         selectedIndex,
         rows: stdout.rows || 24,
@@ -331,9 +223,10 @@ export async function runPiTuiInteractiveScaffold(options?: {
 
     if (mode === 'create-agent') {
       const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
-      stdout.write(renderCreateAgentScreen({
+      stdout.write(renderCreateAgentFrame({
         providers: createProviders,
         selectedIndex: createProviderIndex,
+        rows: stdout.rows || 24,
         statusMessage: createFolderStatus ? `${spinner}${createFolderStatus}` : undefined,
       }));
       stdout.write('\n');
@@ -342,7 +235,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
 
     if (mode === 'create-folder') {
       const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
-      stdout.write(renderFolderPickerScreen({
+      stdout.write(renderFolderPickerFrame({
         currentUri: createFolderUri,
         entries: createFolderEntries,
         selectedIndex: createFolderIndex,
@@ -353,18 +246,17 @@ export async function runPiTuiInteractiveScaffold(options?: {
       return;
     }
 
-    const preview = renderPiTuiPreview({
+    const preview = renderPiTuiSessionFrame({
       sessionState,
       inputBeforeCursor: buf.beforeCursor,
       inputAfterCursor: buf.afterCursor,
       scrollLineOffset,
       termCols: stdout.columns || 80,
       termRows: stdout.rows || 24,
-      debugHeader: false,
+      footerLine: 'Esc back · Ctrl+C or q to exit',
     });
 
     stdout.write(preview + '\n');
-    stdout.write('\nEsc back · Ctrl+C or q to exit\n');
   }
 
   return new Promise<void>((resolve) => {
@@ -571,6 +463,14 @@ export async function runPiTuiInteractiveScaffold(options?: {
         return;
       }
 
+      const screen = buildPiTuiSessionScreen({
+        sessionState,
+        inputBeforeCursor: buf.beforeCursor,
+        inputAfterCursor: buf.afterCursor,
+        scrollLineOffset,
+        termCols: stdout.columns || 80,
+        termRows: Math.max(1, (stdout.rows || 24) - 2),
+      });
       const action = handleSessionKey({
         input: event.input,
         key: event.key,
@@ -578,7 +478,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
         pendingToolCall: false,
         scrollLineOffset,
         maxScroll: 10000,
-        availableLines: Math.max(10, (stdout.rows || 24) - 10),
+        availableLines: screen.contentRows,
       });
 
       if (action.type === 'back') {

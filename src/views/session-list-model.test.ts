@@ -40,4 +40,27 @@ describe('computeSessionListWindow', () => {
     assert.equal(w.hasAbove, true);
     assert.equal(w.hasBelow, true);
   });
+
+  it('uses most of the viewport for session rows', () => {
+    const w = computeSessionListWindow({
+      sessions: mkSessions(50),
+      rootState: null,
+      selectedIndex: 0,
+      terminalRows: 24,
+    });
+
+    assert.equal(w.windowSize, 19);
+  });
+
+  it('reserves one extra row when a status message is shown', () => {
+    const w = computeSessionListWindow({
+      sessions: mkSessions(50),
+      rootState: null,
+      selectedIndex: 0,
+      terminalRows: 24,
+      hasStatus: true,
+    });
+
+    assert.equal(w.windowSize, 18);
+  });
 });
