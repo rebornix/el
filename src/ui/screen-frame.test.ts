@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeFrameBodyRows, computeWindowRows, renderScreenFrame } from './screen-frame.js';
+import { computeFrameBodyRows, computeWindowRows, paintScreenFrame, renderScreenFrame } from './screen-frame.js';
 
 describe('screen frame', () => {
   it('pads body lines so the footer stays at the bottom', () => {
@@ -31,5 +31,12 @@ describe('screen frame', () => {
     });
 
     assert.equal(rows, 19);
+  });
+
+  it('paints frames in place without a full-screen clear', () => {
+    const painted = paintScreenFrame('Title\nBody');
+
+    assert.equal(painted, '\x1b[HTitle\x1b[K\nBody\x1b[K');
+    assert.doesNotMatch(painted, /\x1b\[2J/);
   });
 });

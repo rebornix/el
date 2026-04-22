@@ -37,3 +37,8 @@ export function renderScreenFrame(params: {
 
   return [...lines.slice(0, bodyRows), ...params.footerLines].join('\n');
 }
+
+export function paintScreenFrame(frame: string): string {
+  const lines = frame.split('\n');
+  return `\x1b[H${lines.map((line) => `${line}\x1b[K`).join('\n')}`;
+}

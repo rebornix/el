@@ -3,7 +3,6 @@ import { MENU_OPTIONS, type ServerPromptMode } from '../views/server-prompt-mode
 import { computeSelectionWindow } from '../views/selection-window.js';
 import { computeWindowRows, renderScreenFrame } from './screen-frame.js';
 
-const CLEAR_SCREEN = '\x1b[2J\x1b[H';
 const CLEAR_LINE = '\x1b[2K';
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
 
@@ -57,7 +56,7 @@ export function buildStartupTargetFrame(
       ];
 
       return {
-        output: CLEAR_SCREEN + renderScreenFrame({ rows, bodyLines, footerLines }),
+        output: renderScreenFrame({ rows, bodyLines, footerLines }),
         authStatusRow: state.authView ? bodyLines.length : undefined,
       };
     }
@@ -69,7 +68,7 @@ export function buildStartupTargetFrame(
       bodyLines.push('No tunnels found.');
       if (state.error) bodyLines.push(state.error);
       return {
-        output: CLEAR_SCREEN + renderScreenFrame({ rows, bodyLines, footerLines }),
+        output: renderScreenFrame({ rows, bodyLines, footerLines }),
       };
     }
 
@@ -97,7 +96,7 @@ export function buildStartupTargetFrame(
     if (window.hasBelow) bodyLines.push('↓ more');
 
     return {
-      output: CLEAR_SCREEN + renderScreenFrame({ rows, bodyLines, footerLines }),
+      output: renderScreenFrame({ rows, bodyLines, footerLines }),
     };
   }
 
@@ -126,12 +125,12 @@ export function buildStartupTargetFrame(
     if (window.hasBelow) bodyLines.push('↓ more');
 
     return {
-      output: CLEAR_SCREEN + renderScreenFrame({ rows, bodyLines, footerLines }),
+      output: renderScreenFrame({ rows, bodyLines, footerLines }),
     };
   }
 
   return {
-    output: CLEAR_SCREEN + renderScreenFrame({
+    output: renderScreenFrame({
       rows,
       bodyLines: [
         'Connect to AHP server',

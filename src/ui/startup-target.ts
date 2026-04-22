@@ -18,6 +18,7 @@ import {
   type StartupAuthViewState,
   type StartupTargetScreenState,
 } from './startup-target-screen.js';
+import { paintScreenFrame } from './screen-frame.js';
 
 interface StartupPromptOptions {
   tunnelToken?: string;
@@ -99,7 +100,7 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
   const render = () => {
     const frame = buildStartupTargetFrame(getScreenState(), stdout.rows || 24);
     authStatusRow = frame.authStatusRow;
-    stdout.write(frame.output);
+    stdout.write(paintScreenFrame(frame.output));
   };
 
   const loadTunnels = async () => {

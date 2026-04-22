@@ -26,7 +26,7 @@
 2. Write/update a feature spec in `specs/`.
 3. Implement code changes.
 4. Update `docs/` and `README.md` (quick start only if needed) for user-visible changes.
-5. Record notable technical tradeoffs in `DECISIONS.md`.
+5. Record notable technical tradeoffs and cross-cutting implementation policies in `DECISIONS.md`.
 
 ## Decision policy (`DECISIONS.md`)
 
@@ -34,6 +34,8 @@
   - context
   - decision
   - consequences
+- Also record any cross-cutting implementation policy or reusable pattern that future changes are expected to follow.
+- If a change establishes a preferred approach across multiple files, screens, modules, or flows, add a `DECISIONS.md` entry in the same PR.
 - Treat the decision log as **append-only**:
   - do not rewrite old decisions
   - if a decision changes, add a new entry that references the prior one

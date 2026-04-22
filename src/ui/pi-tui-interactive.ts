@@ -13,6 +13,7 @@ import { buildFolderDisplayEntries } from '../views/folder-picker-model.js';
 import { handleFolderPickerKey } from '../views/folder-picker-key-model.js';
 import { buildPiTuiSessionScreen, renderPiTuiSessionFrame } from './pi-tui-session-screen.js';
 import { renderCreateAgentFrame, renderFolderPickerFrame } from './create-session-screens.js';
+import { paintScreenFrame } from './screen-frame.js';
 import { renderSessionListFrame } from './session-list-screen.js';
 import { mapKeypressToPiEvent, type KeypressLike } from './interactive-mode.js';
 import { createInteractiveScaffoldState } from './pi-tui-interactive-state.js';
@@ -207,42 +208,37 @@ export async function runPiTuiInteractiveScaffold(options?: {
   }
 
   function render(): void {
-    stdout.write('\x1b[2J\x1b[H');
-
     if (mode === 'session-list') {
       const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
-      stdout.write(renderSessionListFrame({
+      stdout.write(paintScreenFrame(renderSessionListFrame({
         sessions,
         selectedIndex,
         rows: stdout.rows || 24,
         statusMessage: sessionListStatus ? `${spinner}${sessionListStatus}` : undefined,
-      }));
-      stdout.write('\n');
+      })));
       return;
     }
 
     if (mode === 'create-agent') {
       const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
-      stdout.write(renderCreateAgentFrame({
+      stdout.write(paintScreenFrame(renderCreateAgentFrame({
         providers: createProviders,
         selectedIndex: createProviderIndex,
         rows: stdout.rows || 24,
         statusMessage: createFolderStatus ? `${spinner}${createFolderStatus}` : undefined,
-      }));
-      stdout.write('\n');
+      })));
       return;
     }
 
     if (mode === 'create-folder') {
       const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
-      stdout.write(renderFolderPickerFrame({
+      stdout.write(paintScreenFrame(renderFolderPickerFrame({
         currentUri: createFolderUri,
         entries: createFolderEntries,
         selectedIndex: createFolderIndex,
         rows: stdout.rows || 24,
         statusMessage: createFolderStatus ? `${spinner}${createFolderStatus}` : undefined,
-      }));
-      stdout.write('\n');
+      })));
       return;
     }
 
@@ -256,7 +252,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
       footerLine: 'Esc back · Ctrl+C or q to exit',
     });
 
-    stdout.write(preview + '\n');
+    stdout.write(paintScreenFrame(preview));
   }
 
   return new Promise<void>((resolve) => {

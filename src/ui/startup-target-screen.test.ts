@@ -38,7 +38,7 @@ describe('startup target screen', () => {
     }), 10);
 
     assert.equal(frame.authStatusRow, 7);
-    assert.match(frame.output, /^\x1b\[2J\x1b\[HConnect via Dev Tunnel/);
+    assert.match(frame.output, /^Connect via Dev Tunnel/);
     assert.match(frame.output, /Authorize tunnel access/);
     assert.match(frame.output, /2\) Enter code: ABCD-EFGH/);
     assert.match(frame.output, /⠹ Waiting for authorization\.\.\./);
@@ -72,7 +72,7 @@ describe('startup target screen', () => {
 
   it('anchors the menu hint at the bottom', () => {
     const frame = renderStartupTargetScreen(mkState(), 7);
-    const lines = frame.replace(/^\x1b\[2J\x1b\[H/, '').split('\n');
+    const lines = frame.split('\n');
     assert.equal(lines.length, 7);
     assert.equal(lines[6], '↑/↓ select · Enter confirm');
   });
@@ -91,7 +91,7 @@ describe('startup target screen', () => {
       }],
     }), 7);
 
-    const lines = frame.replace(/^\x1b\[2J\x1b\[H/, '').split('\n');
+    const lines = frame.split('\n');
     assert.equal(lines.length, 7);
     assert.equal(lines[6], '↑/↓ select · Enter confirm · Esc back');
   });
