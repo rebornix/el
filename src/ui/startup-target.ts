@@ -10,25 +10,47 @@ import {
 } from '../auth/tunnel-auth.js';
 import { listAvailableTunnels, type TunnelInfo } from '../tunnel/discovery.js';
 import { handleServerPromptKey } from '../views/server-prompt-key-model.js';
-import { MENU_OPTIONS, type ServerPromptMode } from '../views/server-prompt-model.js';
+import { type ServerPromptMode } from '../views/server-prompt-model.js';
 import { mapKeypressToPiEvent, type KeypressLike } from './interactive-mode.js';
+import {
+  buildStartupTargetFrame,
+  buildStartupTargetSpinnerUpdate,
+  type StartupAuthViewState,
+  type StartupTargetScreenState,
+} from './startup-target-screen.js';
 
 interface StartupPromptOptions {
   tunnelToken?: string;
   tunnelAuth?: TunnelAuthProvider;
 }
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
-
-async function acquireTunnelToken(options?: StartupPromptOptions): Promise<TunnelAuthToken | null> {
+async function acquireTunnelToken(
+  options?: StartupPromptOptions,
+  onAuthView?: (view: StartupAuthViewState | undefined) => void,
+): Promise<TunnelAuthToken | null> {
   const provider = options?.tunnelAuth ?? 'github';
   const token = await getToken({ provider, manualToken: options?.tunnelToken });
   if (token || provider !== 'github') return token;
 
   const device = await startDeviceCodeFlow();
-  process.stdout.write(`\nAuthorize tunnel access:\n`);
-  process.stdout.write(`1) Open: ${device.verification_uri}\n`);
-  process.stdout.write(`2) Enter code: ${device.user_code}\n\n`);
+  const authView: StartupAuthViewState = {
+    title: 'Authorize tunnel access',
+    lines: [
+      `1) Open: ${device.verification_uri}`,
+      `2) Enter code: ${device.user_code}`,
+    ],
+    statusMessage: 'Waiting for authorization...',
+  };
+
+  if (onAuthView) {
+    onAuthView(authView);
+  } else {
+    process.stdout.write(`\n${authView.title}:\n`);
+    for (const line of authView.lines) {
+      process.stdout.write(`${line}\n`);
+    }
+    process.stdout.write('\n');
+  }
 
   const accessToken = await pollForDeviceCodeToken(
     device.device_code,
@@ -58,52 +80,26 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
   let loadingTunnels = false;
   let spinnerIndex = 0;
   let spinnerTimer: ReturnType<typeof setInterval> | undefined;
+  let authView: StartupAuthViewState | undefined;
+  let authStatusRow: number | undefined;
+
+  const getScreenState = (): StartupTargetScreenState => ({
+    mode,
+    selectedIndex,
+    inputBeforeCursor: buf.beforeCursor,
+    inputAfterCursor: buf.afterCursor,
+    error,
+    tunnels,
+    tunnelIndex,
+    loadingTunnels,
+    spinnerIndex,
+    authView,
+  });
 
   const render = () => {
-    stdout.write('\x1b[2J\x1b[H');
-
-    if (mode === 'tunnel-list') {
-      stdout.write('Connect via Dev Tunnel\n\n');
-
-      if (loadingTunnels) {
-        const spinner = SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length];
-        stdout.write(`${spinner} Loading tunnels...\n`);
-        stdout.write('\nEsc back\n');
-        return;
-      }
-
-      if (tunnels.length === 0) {
-        stdout.write('No tunnels found.\n');
-        if (error) stdout.write(`${error}\n`);
-        stdout.write('\nEsc back\n');
-        return;
-      }
-
-      for (let i = 0; i < tunnels.length; i++) {
-        const t = tunnels[i]!;
-        const marker = i === tunnelIndex ? '❯' : ' ';
-        const online = t.online ? '●' : '○';
-        const id = t.name || t.tunnelId;
-        stdout.write(`${marker} ${online} ${id}\n`);
-      }
-      stdout.write('\n↑/↓ select · Enter confirm · Esc back\n');
-      return;
-    }
-
-    stdout.write('Connect to AHP server\n\n');
-
-    if (mode === 'menu') {
-      MENU_OPTIONS.forEach((opt, idx) => {
-        stdout.write(`${idx === selectedIndex ? '❯' : ' '} ${opt.label}\n`);
-      });
-      stdout.write('\n↑/↓ select · Enter confirm\n');
-      return;
-    }
-
-    stdout.write('Server URL (ws:// or wss://)\n');
-    stdout.write(`> ${buf.beforeCursor}▊${buf.afterCursor}\n`);
-    if (error) stdout.write(`${error}\n`);
-    stdout.write('\nEnter submit · Esc back\n');
+    const frame = buildStartupTargetFrame(getScreenState());
+    authStatusRow = frame.authStatusRow;
+    stdout.write(frame.output);
   };
 
   const loadTunnels = async () => {
@@ -112,7 +108,13 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
     if (!spinnerTimer) {
       spinnerTimer = setInterval(() => {
         spinnerIndex++;
-        if (loadingTunnels) render();
+        if (!loadingTunnels) return;
+        const update = buildStartupTargetSpinnerUpdate(getScreenState(), authStatusRow);
+        if (update) {
+          stdout.write(update);
+          return;
+        }
+        render();
       }, 120);
     }
     error = undefined;
@@ -121,7 +123,10 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
     render();
 
     try {
-      const token = await acquireTunnelToken(options);
+      const token = await acquireTunnelToken(options, (nextAuthView) => {
+        authView = nextAuthView;
+        render();
+      });
       if (!token) {
         error = 'No tunnel token available.';
         return;
@@ -134,6 +139,8 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
       error = err instanceof Error ? err.message : String(err);
     } finally {
       loadingTunnels = false;
+      authView = undefined;
+      authStatusRow = undefined;
       if (spinnerTimer) {
         clearInterval(spinnerTimer);
         spinnerTimer = undefined;
