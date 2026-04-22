@@ -529,7 +529,6 @@ export async function runPiTuiInteractiveScaffold(options?: {
           mode = 'create-folder';
           createFolderIndex = 0;
           void loadCreateFolderEntries().then(() => render());
-          render();
           return;
         }
         render();
@@ -561,7 +560,6 @@ export async function runPiTuiInteractiveScaffold(options?: {
           createFolderUri = action.uri;
           createFolderIndex = 0;
           void loadCreateFolderEntries().then(() => render());
-          render();
           return;
         }
         if (action.type === 'select-current') {
