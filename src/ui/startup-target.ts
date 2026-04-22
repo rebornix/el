@@ -20,15 +20,23 @@ interface StartupPromptOptions {
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
 
-async function acquireTunnelToken(options?: StartupPromptOptions): Promise<TunnelAuthToken | null> {
+async function acquireTunnelToken(
+  options?: StartupPromptOptions,
+  onDeviceCode?: (verificationUri: string, userCode: string) => void,
+): Promise<TunnelAuthToken | null> {
   const provider = options?.tunnelAuth ?? 'github';
   const token = await getToken({ provider, manualToken: options?.tunnelToken });
   if (token || provider !== 'github') return token;
 
   const device = await startDeviceCodeFlow();
-  process.stdout.write(`\nAuthorize tunnel access:\n`);
-  process.stdout.write(`1) Open: ${device.verification_uri}\n`);
-  process.stdout.write(`2) Enter code: ${device.user_code}\n\n`);
+
+  if (onDeviceCode) {
+    onDeviceCode(device.verification_uri, device.user_code);
+  } else {
+    process.stdout.write(`\nAuthorize tunnel access:\n`);
+    process.stdout.write(`1) Open: ${device.verification_uri}\n`);
+    process.stdout.write(`2) Enter code: ${device.user_code}\n\n`);
+  }
 
   const accessToken = await pollForDeviceCodeToken(
     device.device_code,
@@ -58,6 +66,7 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
   let loadingTunnels = false;
   let spinnerIndex = 0;
   let spinnerTimer: ReturnType<typeof setInterval> | undefined;
+  let deviceCodeInfo: { verificationUri: string; userCode: string } | undefined;
 
   const render = () => {
     stdout.write('\x1b[2J\x1b[H');
@@ -67,7 +76,16 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
 
       if (loadingTunnels) {
         const spinner = SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length];
-        stdout.write(`${spinner} Loading tunnels...\n`);
+
+        if (deviceCodeInfo) {
+          stdout.write(`Authorize tunnel access:\n`);
+          stdout.write(`1) Open: ${deviceCodeInfo.verificationUri}\n`);
+          stdout.write(`2) Enter code: ${deviceCodeInfo.userCode}\n\n`);
+          stdout.write(`${spinner} Waiting for authorization...\n`);
+        } else {
+          stdout.write(`${spinner} Loading tunnels...\n`);
+        }
+
         stdout.write('\nEsc back\n');
         return;
       }
@@ -121,7 +139,10 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
     render();
 
     try {
-      const token = await acquireTunnelToken(options);
+      const token = await acquireTunnelToken(options, (verificationUri, userCode) => {
+        deviceCodeInfo = { verificationUri, userCode };
+        render();
+      });
       if (!token) {
         error = 'No tunnel token available.';
         return;
@@ -134,6 +155,7 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
       error = err instanceof Error ? err.message : String(err);
     } finally {
       loadingTunnels = false;
+      deviceCodeInfo = undefined;
       if (spinnerTimer) {
         clearInterval(spinnerTimer);
         spinnerTimer = undefined;
