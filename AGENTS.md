@@ -60,6 +60,35 @@
 - Preserve high-signal list rows (title + folder + provider) unless product direction changes.
 - Keep user vs assistant rendering visually distinct.
 
+## Design principle: do one thing well
+
+Every file, module, and function should have a single clear responsibility.
+
+**Separation rules:**
+
+- **Pure logic vs I/O.** Functions that compute, transform, or decide should not read stdin, write stdout, or call APIs. Pass results out; let the caller do I/O.
+- **State vs rendering.** Code that manages state (models, reducers, reconcilers) must not import rendering code. Code that renders frames must not mutate state.
+- **Key handling vs screen rendering.** Keyboard input mapping returns action objects. Screen renderers consume state and produce frame data. They never share a file.
+- **Orchestration vs domain.** Top-level wiring (event loops, lifecycle) is separate from domain logic (auth flows, protocol ops, viewport math).
+
+**Litmus test for new files:**
+
+Can you describe what this file does in one short sentence without "and"? If not, split it.
+
+**Good examples already in the codebase:**
+
+- `views/session-key-handler.ts` — maps keys to action objects, nothing else
+- `views/session-list-model.ts` — computes session list display data, no I/O
+- `ui/screen-frame.ts` — paints a frame to the terminal, no state logic
+- `protocol/client.ts` — JSON-RPC client, typed command surface (moderate coupling, acceptable)
+
+**Known violations (tech debt):**
+
+- `ui/pi-tui-interactive.ts` — mixes orchestration, state, rendering, API calls, and 4 screen modes
+- `ui/startup-target.ts` — mixes auth flow, TUI shell, and navigation
+
+New work should not add to these files without splitting responsibility out first.
+
 ## Agent rules
 
 - Keep changes focused and reviewable.
