@@ -4,11 +4,11 @@ import { TextBuffer } from '../text-buffer.js';
 import { connectAhpClient } from '../protocol/connect.js';
 import type { AhpClient } from '../protocol/client.js';
 import { SessionClientState } from '../protocol/session-client-state.js';
-import type { IFetchTurnsResult, IAhpNotification, ISessionState, ISessionSummary, ITurn } from '../protocol/types/index.js';
-import { SessionStatus, TurnState } from '../protocol/types/index.js';
+import type { IAhpNotification, ISessionState, ISessionSummary } from '../protocol/types/index.js';
 import { handleSessionKey } from '../views/session-key-handler.js';
 import { handleSessionListKey } from '../views/session-list-key-model.js';
-import { getCreateSessionAgents, nextCreateSessionIndex } from '../views/create-session-model.js';
+import { getCreateSessionAgents } from '../views/create-session-model.js';
+import { handleCreateAgentKey } from '../views/create-agent-key-model.js';
 import { buildFolderDisplayEntries } from '../views/folder-picker-model.js';
 import { handleFolderPickerKey } from '../views/folder-picker-key-model.js';
 import { buildPiTuiSessionScreen, renderPiTuiSessionFrame } from './pi-tui-session-screen.js';
@@ -19,65 +19,12 @@ import { mapKeypressToPiEvent, type KeypressLike } from './interactive-mode.js';
 import { createInteractiveScaffoldState } from './pi-tui-interactive-state.js';
 import { shouldDispatchInteractiveTurns } from './interactive-send-mode.js';
 import { buildTurnStartedAction } from './pi-tui-dispatch.js';
+import { toSingleLineTitle, looksLikeGenericTitle, firstPromptTitle } from '../views/session-title-model.js';
+import { applyFetchedTurns, appendOptimisticUserTurn } from '../views/session-state-transforms.js';
 
 type ScreenMode = 'session-list' | 'create-agent' | 'create-folder' | 'session';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
-
-function applyFetchedTurns(state: ISessionState, turns: IFetchTurnsResult): ISessionState {
-  return {
-    ...state,
-    turns: turns.turns,
-  };
-}
-
-function appendOptimisticUserTurn(state: ISessionState, text: string): ISessionState {
-  const nextTurn: ITurn = {
-    id: `local-${Date.now()}`,
-    state: TurnState.Complete,
-    userMessage: { text },
-    responseParts: [],
-    usage: undefined,
-  };
-
-  return {
-    ...state,
-    turns: [...state.turns, nextTurn],
-    summary: {
-      ...state.summary,
-      modifiedAt: Date.now(),
-    },
-  };
-}
-
-function toSingleLineTitle(raw: string | undefined, max = 72): string {
-  const base = (raw ?? '(untitled)')
-    .replace(/<attachment[\s\S]*?<\/attachment>/gi, ' ')
-    .replace(/<attachments?>|<\/attachments?>/gi, ' ')
-    .replace(/<reminder>[\s\S]*?<\/reminder>/gi, ' ')
-    .replace(/[\r\n\t]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (base.length <= max) return base;
-  return `${base.slice(0, Math.max(1, max - 1))}…`;
-}
-
-function looksLikeGenericTitle(title: string | undefined): boolean {
-  if (!title) return true;
-  const t = title.trim();
-  if (!t) return true;
-  if (/^session$/i.test(t)) return true;
-  if (/^[a-z]+:\/\//i.test(t) || /^[a-z]+:\//i.test(t)) return true;
-  return false;
-}
-
-function firstPromptTitle(text: string, max = 64): string {
-  const oneLine = text.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!oneLine) return 'New session';
-  if (oneLine.length <= max) return oneLine;
-  return `${oneLine.slice(0, max - 1)}…`;
-}
 
 export async function runPiTuiInteractiveScaffold(options?: {
   serverUrl?: string;
@@ -398,22 +345,23 @@ export async function runPiTuiInteractiveScaffold(options?: {
       }
 
       if (mode === 'create-agent') {
-        if (event.key.escape) {
+        const agentAction = handleCreateAgentKey({
+          key: event.key,
+          providerIndex: createProviderIndex,
+          providerCount: createProviders.length,
+        });
+
+        if (agentAction.type === 'back') {
           mode = 'session-list';
           render();
           return;
         }
-        if (event.key.upArrow) {
-          createProviderIndex = nextCreateSessionIndex(createProviderIndex, 'up', createProviders.length);
+        if (agentAction.type === 'move') {
+          createProviderIndex = agentAction.providerIndex;
           render();
           return;
         }
-        if (event.key.downArrow) {
-          createProviderIndex = nextCreateSessionIndex(createProviderIndex, 'down', createProviders.length);
-          render();
-          return;
-        }
-        if (event.key.return) {
+        if (agentAction.type === 'confirm') {
           mode = 'create-folder';
           createFolderIndex = 0;
           void loadCreateFolderEntries().then(() => render());
