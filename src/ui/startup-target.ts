@@ -1,15 +1,9 @@
 import readline from 'node:readline';
 import { TextBuffer } from '../text-buffer.js';
-import {
-  cacheToken,
-  getToken,
-  startDeviceCodeFlow,
-  pollForDeviceCodeToken,
-  type TunnelAuthProvider,
-  type TunnelAuthToken,
-} from '../auth/tunnel-auth.js';
+import { acquireTunnelToken, type AuthViewState } from '../auth/tunnel-token-flow.js';
 import { listAvailableTunnels, type TunnelInfo } from '../tunnel/discovery.js';
 import { handleServerPromptKey } from '../views/server-prompt-key-model.js';
+import { handleTunnelListKey } from '../views/tunnel-list-key-model.js';
 import { type ServerPromptMode } from '../views/server-prompt-model.js';
 import { mapKeypressToPiEvent, type KeypressLike } from './interactive-mode.js';
 import {
@@ -19,52 +13,11 @@ import {
   type StartupTargetScreenState,
 } from './startup-target-screen.js';
 import { paintScreenFrame } from './screen-frame.js';
+import type { TunnelAuthProvider } from '../auth/tunnel-auth.js';
 
 interface StartupPromptOptions {
   tunnelToken?: string;
   tunnelAuth?: TunnelAuthProvider;
-}
-
-async function acquireTunnelToken(
-  options?: StartupPromptOptions,
-  onAuthView?: (view: StartupAuthViewState | undefined) => void,
-): Promise<TunnelAuthToken | null> {
-  const provider = options?.tunnelAuth ?? 'github';
-  const token = await getToken({ provider, manualToken: options?.tunnelToken });
-  if (token || provider !== 'github') return token;
-
-  const device = await startDeviceCodeFlow();
-  const authView: StartupAuthViewState = {
-    title: 'Authorize tunnel access',
-    lines: [
-      `1) Open: ${device.verification_uri}`,
-      `2) Enter code: ${device.user_code}`,
-    ],
-    statusMessage: 'Waiting for authorization...',
-  };
-
-  if (onAuthView) {
-    onAuthView(authView);
-  } else {
-    process.stdout.write(`\n${authView.title}:\n`);
-    for (const line of authView.lines) {
-      process.stdout.write(`${line}\n`);
-    }
-    process.stdout.write('\n');
-  }
-
-  const accessToken = await pollForDeviceCodeToken(
-    device.device_code,
-    device.interval,
-    device.expires_in,
-  );
-
-  const resolved: TunnelAuthToken = {
-    token: accessToken,
-    provider,
-  };
-  await cacheToken(resolved);
-  return resolved;
 }
 
 export async function promptStartupTarget(options?: StartupPromptOptions): Promise<string> {
@@ -173,37 +126,32 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
       const event = mapKeypressToPiEvent(str, key);
 
       if (mode === 'tunnel-list') {
-        if (event.key.escape) {
+        const tunnelAction = handleTunnelListKey({
+          key: { ...event.key, ctrl: !!event.key.ctrl },
+          input: event.input,
+          tunnelIndex,
+          tunnelCount: tunnels.length,
+          loading: loadingTunnels,
+        });
+
+        if (tunnelAction.type === 'back') {
           mode = 'menu';
           error = undefined;
           render();
           return;
         }
-
-        if (loadingTunnels) {
-          return;
-        }
-
-        if (event.key.upArrow || (event.key.ctrl && event.input === 'p')) {
-          tunnelIndex = Math.max(0, tunnelIndex - 1);
+        if (tunnelAction.type === 'move') {
+          tunnelIndex = tunnelAction.tunnelIndex;
           render();
           return;
         }
-
-        if (event.key.downArrow || (event.key.ctrl && event.input === 'n')) {
-          tunnelIndex = Math.min(Math.max(0, tunnels.length - 1), tunnelIndex + 1);
-          render();
-          return;
-        }
-
-        if (event.key.return && tunnels.length > 0) {
-          const selected = tunnels[tunnelIndex]!;
+        if (tunnelAction.type === 'select') {
+          const selected = tunnels[tunnelAction.tunnelIndex]!;
           const tunnelRef = selected.tunnelId || selected.name;
           cleanup();
           resolve(`tunnel://${tunnelRef}`);
           return;
         }
-
         return;
       }
 
