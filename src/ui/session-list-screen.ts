@@ -17,18 +17,21 @@ function toSingleLineTitle(raw: string | undefined, max = 72): string {
     .replace(/<reminder>[\s\S]*?<\/reminder>/gi, ' ')
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .replace(/^[-*•]\s+/, '');
 
   if (base.length <= max) return base;
   return `${base.slice(0, Math.max(1, max - 1))}…`;
 }
 
-function folderNameFromSummary(s: ISessionSummary): string {
+function folderNameFromSummary(s: ISessionSummary, max = 20): string {
   const wd = s.workingDirectory;
   if (!wd) return 'no-folder';
   const path = uriToDisplayPath(wd);
   const parts = path.split('/').filter(Boolean);
-  return parts[parts.length - 1] ?? '/';
+  const name = parts[parts.length - 1] ?? '/';
+  if (name.length <= max) return name;
+  return name.slice(0, max - 1) + '…';
 }
 
 export function renderSessionListFrame(params: {
@@ -39,15 +42,16 @@ export function renderSessionListFrame(params: {
   openingSessionResource?: string;
   spinnerIndex?: number;
   loading?: boolean;
+  loadingText?: string;
 }): string {
-  const { sessions, selectedIndex, rows, statusMessage, openingSessionResource, spinnerIndex = 0, loading } = params;
+  const { sessions, selectedIndex, rows, statusMessage, openingSessionResource, spinnerIndex = 0, loading, loadingText } = params;
 
   // Show loading state in-place
   if (loading) {
     const bodyLines = [
-      'Loading sessions',
+      'Sessions',
       '',
-      `${spinnerFrame(spinnerIndex)} ${statusMessage || 'Loading sessions…'}`,
+      `${spinnerFrame(spinnerIndex)} ${loadingText || 'Loading sessions…'}`,
     ];
     return renderScreenFrame({
       rows,
@@ -61,9 +65,9 @@ export function renderSessionListFrame(params: {
     const session = sessions.find(s => s.resource === openingSessionResource);
     const sessionTitle = session ? toSingleLineTitle(session.title, 36) : openingSessionResource;
     const bodyLines = [
-      'Opening session',
+      'Sessions',
       '',
-      `${spinnerFrame(spinnerIndex)} Opening: ${sessionTitle}…`,
+      `${spinnerFrame(spinnerIndex)} Opening ${sessionTitle}…`,
     ];
     return renderScreenFrame({
       rows,
@@ -92,14 +96,17 @@ export function renderSessionListFrame(params: {
     }),
   });
 
+  const providers = new Set(sessions.map(s => s.provider).filter(Boolean));
+  const showProvider = providers.size > 1;
+
   const items: Array<{ label: string }> = [
-    { label: 'Create new session' },
+    { label: '+ Create new session' },
     ...sessions.map((s) => {
       const active = (s.status & SessionStatus.InProgress) === SessionStatus.InProgress;
       const title = toSingleLineTitle(s.title, 44);
       const folder = folderNameFromSummary(s);
-      const provider = s.provider || 'unknown';
-      return { label: `${active ? '◉' : '○'} ${title}  [${folder}] (${provider})` };
+      const suffix = showProvider ? `  [${folder}] (${s.provider || 'unknown'})` : `  [${folder}]`;
+      return { label: `${active ? '◉' : '○'} ${title}${suffix}` };
     }),
   ];
 

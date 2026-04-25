@@ -62,6 +62,10 @@ export class Loader {
     return this.frame;
   }
 
+  getText(): string {
+    return this.config.text;
+  }
+
   getFrame(): string {
     const { text, style } = this.config;
 

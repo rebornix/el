@@ -83,8 +83,8 @@ describe('startup target screen', () => {
 
     const lines = frame.split('\n');
     assert.equal(lines.length, 7);
-    assert.match(lines[0]!, /Loading tunnels/);
-    assert.match(lines[2]!, /⠋ Loading tunnels\.\.\./);
+    assert.match(lines[0]!, /Connect via Dev Tunnel/);
+    assert.match(lines[2]!, /⠋ Loading tunnels…/);
     assert.equal(lines[6], 'Esc back');
   });
 

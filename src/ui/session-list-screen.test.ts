@@ -48,14 +48,13 @@ describe('renderSessionListFrame', () => {
       sessions: [],
       selectedIndex: 0,
       rows: 7,
-      statusMessage: 'Loading sessions…',
       loading: true,
       spinnerIndex: 0,
     });
 
     const lines = frame.split('\n');
     assert.equal(lines.length, 7);
-    assert.match(lines[0]!, /Loading sessions/);
+    assert.match(lines[0]!, /Sessions/);
     assert.match(lines[2]!, /⠋ Loading sessions…/);
     assert.equal(lines[6], 'Esc back');
   });

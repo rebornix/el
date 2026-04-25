@@ -45,9 +45,9 @@ export function buildStartupTargetFrame(
       const tunnel = state.tunnels.find(t => (t.tunnelId || t.name) === state.connectingTunnelId);
       const tunnelName = tunnel?.name || state.connectingTunnelId;
       const bodyLines = [
-        'Connecting to tunnel',
+        'Connect via Dev Tunnel',
         '',
-        `${spinnerFrame(state.spinnerIndex)} Connecting to ${tunnelName}...`,
+        `${spinnerFrame(state.spinnerIndex)} Connecting to ${tunnelName}…`,
       ];
       return {
         output: renderScreenFrame({ rows, bodyLines, footerLines: ['Esc back'] }),
@@ -71,9 +71,9 @@ export function buildStartupTargetFrame(
       }
 
       const bodyLines = [
-        'Loading tunnels',
+        'Connect via Dev Tunnel',
         '',
-        `${spinnerFrame(state.spinnerIndex)} Loading tunnels...`,
+        `${spinnerFrame(state.spinnerIndex)} Loading tunnels…`,
       ];
       return {
         output: renderScreenFrame({ rows, bodyLines, footerLines: ['Esc back'] }),

@@ -63,7 +63,10 @@ export async function runPiTuiInteractiveScaffold(options?: {
   let client: AhpClient | undefined;
   let disconnect: (() => void) | undefined;
 
-  startSpinner('Loading sessions…', false);
+  const tunnelName = options?.serverUrl?.startsWith('tunnel://')
+    ? options.serverUrl.slice('tunnel://'.length)
+    : undefined;
+  startSpinner(tunnelName ? `Connecting to ${tunnelName}…` : 'Connecting…', false);
   try {
     const conn = await connectAhpClient({
       serverUrl: options?.serverUrl,
@@ -72,6 +75,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
     });
     client = conn.client;
     disconnect = conn.disconnect;
+    startSpinner('Loading sessions…');
     const initialized = await client.initialize(clientId, ['agenthost:/root']);
     for (const snap of initialized.snapshots) {
       liveState.handleSnapshot(snap);
@@ -160,6 +164,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
         openingSessionResource,
         spinnerIndex: currentLoader?.getFrameIndex() ?? 0,
         loading: Boolean(currentLoader) && !openingSessionResource,
+        loadingText: currentLoader?.getText(),
       })));
     } else if (mode === 'create-agent') {
       stdout.write(paintScreenFrame(renderCreateAgentFrame({

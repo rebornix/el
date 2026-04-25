@@ -150,18 +150,8 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
         if (tunnelAction.type === 'select') {
           const selected = tunnels[tunnelAction.tunnelIndex]!;
           const tunnelRef = selected.tunnelId || selected.name;
-          connectingTunnelId = tunnelRef;
-          if (!spinnerTimer) {
-            spinnerTimer = setInterval(() => {
-              spinnerIndex++;
-              render();
-            }, 120);
-          }
-          render();
-          setTimeout(() => {
-            cleanup();
-            resolve(`tunnel://${tunnelRef}`);
-          }, 500);
+          cleanup();
+          resolve(`tunnel://${tunnelRef}`);
           return;
         }
         return;
