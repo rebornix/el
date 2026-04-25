@@ -36,6 +36,7 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
   let spinnerTimer: ReturnType<typeof setInterval> | undefined;
   let authView: StartupAuthViewState | undefined;
   let authStatusRow: number | undefined;
+  let connectingTunnelId: string | undefined;
 
   const getScreenState = (): StartupTargetScreenState => ({
     mode,
@@ -48,6 +49,7 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
     loadingTunnels,
     spinnerIndex,
     authView,
+    connectingTunnelId,
   });
 
   const render = () => {
@@ -148,8 +150,18 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
         if (tunnelAction.type === 'select') {
           const selected = tunnels[tunnelAction.tunnelIndex]!;
           const tunnelRef = selected.tunnelId || selected.name;
-          cleanup();
-          resolve(`tunnel://${tunnelRef}`);
+          connectingTunnelId = tunnelRef;
+          if (!spinnerTimer) {
+            spinnerTimer = setInterval(() => {
+              spinnerIndex++;
+              render();
+            }, 120);
+          }
+          render();
+          setTimeout(() => {
+            cleanup();
+            resolve(`tunnel://${tunnelRef}`);
+          }, 500);
           return;
         }
         return;

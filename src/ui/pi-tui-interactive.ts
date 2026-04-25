@@ -21,16 +21,18 @@ import { shouldDispatchInteractiveTurns } from './interactive-send-mode.js';
 import { buildTurnStartedAction } from './pi-tui-dispatch.js';
 import { toSingleLineTitle, looksLikeGenericTitle, firstPromptTitle } from '../views/session-title-model.js';
 import { applyFetchedTurns, appendOptimisticUserTurn } from '../views/session-state-transforms.js';
+import { Loader, type LoaderStyle } from './loader.js';
 
 type ScreenMode = 'session-list' | 'create-agent' | 'create-folder' | 'session';
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
+const DEFAULT_LOADER_STYLE: LoaderStyle = 'spinner';
 
 export async function runPiTuiInteractiveScaffold(options?: {
   serverUrl?: string;
   tunnelToken?: string;
   tunnelAuth?: 'github' | 'microsoft';
   env?: NodeJS.ProcessEnv;
+  loaderStyle?: LoaderStyle;
 }): Promise<void> {
   const stdin = process.stdin;
   const stdout = process.stdout;
@@ -44,7 +46,8 @@ export async function runPiTuiInteractiveScaffold(options?: {
   let scrollLineOffset = 0;
   let sessionState = createInteractiveScaffoldState();
   let sessions: ISessionSummary[] = [];
-  let sessionListStatus: string | undefined = 'Loading sessions…';
+  let sessionListStatus: string | undefined;
+  let openingSessionResource: string | undefined;
   const liveState = new SessionClientState();
   liveState.setClientId(clientId);
   let createProviders: string[] = [];
@@ -53,14 +56,14 @@ export async function runPiTuiInteractiveScaffold(options?: {
   let createFolderEntries: { name: string; display: string; isDir: boolean }[] = [];
   let createFolderIndex = 0;
   let createFolderStatus: string | undefined;
-  let spinnerIndex = 0;
-  let spinnerTimer: ReturnType<typeof setInterval> | undefined;
+  const loaderStyle = options?.loaderStyle ?? DEFAULT_LOADER_STYLE;
+  let currentLoader: Loader | undefined;
   let defaultDirectory: string | undefined;
   let preferredProvider: string | undefined;
   let client: AhpClient | undefined;
   let disconnect: (() => void) | undefined;
 
-  startSpinner();
+  startSpinner('Loading sessions…', false);
   try {
     const conn = await connectAhpClient({
       serverUrl: options?.serverUrl,
@@ -120,11 +123,80 @@ export async function runPiTuiInteractiveScaffold(options?: {
     stopSpinner();
   }
 
+  // Define helper functions before they're called
+  function startSpinner(text: string, shouldRender: boolean = true): void {
+    stopSpinner();
+    currentLoader = new Loader({ 
+      style: loaderStyle, 
+      text,
+      onFrame: () => render(),
+    });
+    currentLoader.start();
+    // Trigger initial render to show loader (only if shouldRender is true)
+    if (shouldRender) {
+      render();
+    }
+  }
+
+  function stopSpinner(): void {
+    if (currentLoader) {
+      currentLoader.stop();
+      currentLoader = undefined;
+    }
+  }
+
+  function getStatusWithLoader(status: string | undefined): string | undefined {
+    if (!currentLoader) return status;
+    return currentLoader.getFrame();
+  }
+
+  function render(): void {
+    if (mode === 'session-list') {
+      stdout.write(paintScreenFrame(renderSessionListFrame({
+        sessions,
+        selectedIndex,
+        rows: stdout.rows || 24,
+        statusMessage: getStatusWithLoader(sessionListStatus),
+        openingSessionResource,
+        spinnerIndex: currentLoader?.getFrameIndex() ?? 0,
+        loading: Boolean(currentLoader) && !openingSessionResource,
+      })));
+    } else if (mode === 'create-agent') {
+      stdout.write(paintScreenFrame(renderCreateAgentFrame({
+        providers: createProviders,
+        selectedIndex: createProviderIndex,
+        rows: stdout.rows || 24,
+        statusMessage: getStatusWithLoader(createFolderStatus),
+      })));
+    } else if (mode === 'create-folder') {
+      stdout.write(paintScreenFrame(renderFolderPickerFrame({
+        currentUri: createFolderUri,
+        entries: createFolderEntries,
+        selectedIndex: createFolderIndex,
+        rows: stdout.rows || 24,
+        statusMessage: getStatusWithLoader(createFolderStatus),
+      })));
+    } else {
+      const preview = renderPiTuiSessionFrame({
+        sessionState,
+        inputBeforeCursor: buf.beforeCursor,
+        inputAfterCursor: buf.afterCursor,
+        scrollLineOffset,
+        termCols: stdout.columns || 80,
+        termRows: stdout.rows || 24,
+        footerLine: 'Esc back · Ctrl+C or q to exit',
+      });
+
+      stdout.write(paintScreenFrame(preview));
+    }
+  }
+
+  // Now render the initial state
+  render();
+
   async function loadCreateFolderEntries(): Promise<void> {
     if (!client) return;
-    createFolderStatus = 'Loading folders…';
-    startSpinner();
-    render();
+    startSpinner('Loading folders…');
     try {
       const listed = await client.resourceList(createFolderUri as import('../protocol/types/index.js').URI);
       createFolderEntries = buildFolderDisplayEntries(listed.entries);
@@ -137,69 +209,8 @@ export async function runPiTuiInteractiveScaffold(options?: {
       createFolderStatus = `Failed to load folder: ${msg}`;
     } finally {
       stopSpinner();
-    }
-  }
-
-  function startSpinner(): void {
-    if (spinnerTimer) return;
-    spinnerTimer = setInterval(() => {
-      spinnerIndex++;
       render();
-    }, 120);
-  }
-
-  function stopSpinner(): void {
-    if (!spinnerTimer) return;
-    clearInterval(spinnerTimer);
-    spinnerTimer = undefined;
-  }
-
-  function render(): void {
-    if (mode === 'session-list') {
-      const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
-      stdout.write(paintScreenFrame(renderSessionListFrame({
-        sessions,
-        selectedIndex,
-        rows: stdout.rows || 24,
-        statusMessage: sessionListStatus ? `${spinner}${sessionListStatus}` : undefined,
-      })));
-      return;
     }
-
-    if (mode === 'create-agent') {
-      const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
-      stdout.write(paintScreenFrame(renderCreateAgentFrame({
-        providers: createProviders,
-        selectedIndex: createProviderIndex,
-        rows: stdout.rows || 24,
-        statusMessage: createFolderStatus ? `${spinner}${createFolderStatus}` : undefined,
-      })));
-      return;
-    }
-
-    if (mode === 'create-folder') {
-      const spinner = spinnerTimer ? `${SPINNER_FRAMES[spinnerIndex % SPINNER_FRAMES.length]} ` : '';
-      stdout.write(paintScreenFrame(renderFolderPickerFrame({
-        currentUri: createFolderUri,
-        entries: createFolderEntries,
-        selectedIndex: createFolderIndex,
-        rows: stdout.rows || 24,
-        statusMessage: createFolderStatus ? `${spinner}${createFolderStatus}` : undefined,
-      })));
-      return;
-    }
-
-    const preview = renderPiTuiSessionFrame({
-      sessionState,
-      inputBeforeCursor: buf.beforeCursor,
-      inputAfterCursor: buf.afterCursor,
-      scrollLineOffset,
-      termCols: stdout.columns || 80,
-      termRows: stdout.rows || 24,
-      footerLine: 'Esc back · Ctrl+C or q to exit',
-    });
-
-    stdout.write(paintScreenFrame(preview));
   }
 
   return new Promise<void>((resolve) => {
@@ -223,9 +234,9 @@ export async function runPiTuiInteractiveScaffold(options?: {
       const summary = sessions[selectedIndex - 1];
       if (!summary) return;
 
-      sessionListStatus = `Opening: ${toSingleLineTitle(summary.title, 36)}...`;
-      startSpinner();
-      mode = 'session';
+      openingSessionResource = summary.resource;
+      startSpinner(`Opening: ${toSingleLineTitle(summary.title, 36)}…`);
+      
       scrollLineOffset = 0;
       buf.clear();
       sessionState = {
@@ -233,7 +244,6 @@ export async function runPiTuiInteractiveScaffold(options?: {
         summary,
         turns: [],
       };
-      render();
 
       try {
         const subscribed = await client.subscribe(summary.resource);
@@ -250,15 +260,19 @@ export async function runPiTuiInteractiveScaffold(options?: {
 
         const turns = await client.fetchTurns({ session: snap.resource, limit: 50 });
         sessionState = applyFetchedTurns(sessionState, turns);
+        
+        stopSpinner();
+        openingSessionResource = undefined;
+        mode = 'session';
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[el] failed to open session:', msg);
-        mode = 'session-list';
+        stopSpinner();
+        openingSessionResource = undefined;
         sessionListStatus = `Failed to open session: ${msg}`;
       } finally {
-        stopSpinner();
+        render();
       }
-      render();
     };
 
     const createSelectedSession = async () => {
@@ -271,8 +285,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
       const provider = createProviders[createProviderIndex] ?? preferredProvider ?? sessions[0]?.provider ?? 'copilot';
       const sessionUri = `${provider}:/${randomUUID()}`;
 
-      createFolderStatus = 'Creating session...';
-      startSpinner();
+      startSpinner('Creating session…');
       try {
         await client.createSession({
           session: sessionUri,
@@ -289,6 +302,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
         createFolderStatus = undefined;
 
         if (selectedIndex > 0) {
+          stopSpinner();
           await openSelectedSession();
           return;
         }
@@ -298,8 +312,8 @@ export async function runPiTuiInteractiveScaffold(options?: {
         createFolderStatus = `Failed to create session: ${msg}`;
       } finally {
         stopSpinner();
+        render();
       }
-      render();
     };
 
     const onKeypress = (str: string, key: KeypressLike) => {
@@ -377,7 +391,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
           key: event.key,
           selectedIdx: createFolderIndex,
           totalEntries: Math.max(1, createFolderEntries.length),
-          loading: !!spinnerTimer,
+          loading: !!currentLoader,
           currentUri: createFolderUri as import('../protocol/types/index.js').URI,
           sortedDirs: dirs,
         });

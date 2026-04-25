@@ -4,6 +4,12 @@ import { computeSessionListWindow } from '../views/session-list-model.js';
 import { uriToDisplayPath } from '../uri-helpers.js';
 import { computeWindowRows, renderScreenFrame } from './screen-frame.js';
 
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
+
+function spinnerFrame(index: number): string {
+  return SPINNER_FRAMES[index % SPINNER_FRAMES.length]!;
+}
+
 function toSingleLineTitle(raw: string | undefined, max = 72): string {
   const base = (raw ?? '(untitled)')
     .replace(/<attachment[\s\S]*?<\/attachment>/gi, ' ')
@@ -30,8 +36,42 @@ export function renderSessionListFrame(params: {
   selectedIndex: number;
   rows: number;
   statusMessage?: string;
+  openingSessionResource?: string;
+  spinnerIndex?: number;
+  loading?: boolean;
 }): string {
-  const { sessions, selectedIndex, rows, statusMessage } = params;
+  const { sessions, selectedIndex, rows, statusMessage, openingSessionResource, spinnerIndex = 0, loading } = params;
+
+  // Show loading state in-place
+  if (loading) {
+    const bodyLines = [
+      'Loading sessions',
+      '',
+      `${spinnerFrame(spinnerIndex)} ${statusMessage || 'Loading sessions…'}`,
+    ];
+    return renderScreenFrame({
+      rows,
+      bodyLines,
+      footerLines: ['Esc back'],
+    });
+  }
+
+  // Show opening state when a session is being opened
+  if (openingSessionResource) {
+    const session = sessions.find(s => s.resource === openingSessionResource);
+    const sessionTitle = session ? toSingleLineTitle(session.title, 36) : openingSessionResource;
+    const bodyLines = [
+      'Opening session',
+      '',
+      `${spinnerFrame(spinnerIndex)} Opening: ${sessionTitle}…`,
+    ];
+    return renderScreenFrame({
+      rows,
+      bodyLines,
+      footerLines: ['Esc back'],
+    });
+  }
+
   const headerLines = ['Sessions', ''];
   const footerLines = [
     ...(statusMessage ? [statusMessage] : []),

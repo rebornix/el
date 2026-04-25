@@ -37,14 +37,19 @@ describe('startup target screen', () => {
       },
     }), 10);
 
-    assert.equal(frame.authStatusRow, 7);
+    assert.equal(frame.authStatusRow, undefined);
     assert.match(frame.output, /^Connect via Dev Tunnel/);
     assert.match(frame.output, /Authorize tunnel access/);
     assert.match(frame.output, /2\) Enter code: ABCD-EFGH/);
     assert.match(frame.output, /⠹ Waiting for authorization\.\.\./);
+    // Spinner should be in body, not footer
+    const lines = frame.output.split('\n');
+    const spinnerLine = lines.findIndex(l => l.includes('⠹ Waiting for authorization...'));
+    const escLine = lines.findIndex(l => l.includes('Esc back'));
+    assert.ok(spinnerLine < escLine, 'spinner should appear in body before footer');
   });
 
-  it('updates only the auth status line during spinner ticks', () => {
+  it('falls back to full re-render when loading with auth prompt', () => {
     const update = buildStartupTargetSpinnerUpdate(mkState({
       mode: 'tunnel-list',
       loadingTunnels: true,
@@ -56,8 +61,7 @@ describe('startup target screen', () => {
       },
     }), 5);
 
-    assert.equal(update, '\x1b[5;1H\x1b[2K⠸ Waiting for authorization...');
-    assert.doesNotMatch(update ?? '', /\x1b\[2J\x1b\[H/);
+    assert.equal(update, null);
   });
 
   it('falls back to full re-render when no auth prompt is active', () => {
@@ -68,6 +72,20 @@ describe('startup target screen', () => {
     }), undefined);
 
     assert.equal(update, null);
+  });
+
+  it('renders loading tunnels spinner in-place', () => {
+    const frame = renderStartupTargetScreen(mkState({
+      mode: 'tunnel-list',
+      loadingTunnels: true,
+      spinnerIndex: 0,
+    }), 7);
+
+    const lines = frame.split('\n');
+    assert.equal(lines.length, 7);
+    assert.match(lines[0]!, /Loading tunnels/);
+    assert.match(lines[2]!, /⠋ Loading tunnels\.\.\./);
+    assert.equal(lines[6], 'Esc back');
   });
 
   it('anchors the menu hint at the bottom', () => {

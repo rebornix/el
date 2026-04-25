@@ -23,6 +23,7 @@ export interface StartupTargetScreenState {
   loadingTunnels: boolean;
   spinnerIndex: number;
   authView?: StartupAuthViewState;
+  connectingTunnelId?: string;
 }
 
 interface StartupTargetFrame {
@@ -39,25 +40,43 @@ export function buildStartupTargetFrame(
   rows: number,
 ): StartupTargetFrame {
   if (state.mode === 'tunnel-list') {
+    // Show connecting state when a tunnel is being connected
+    if (state.connectingTunnelId) {
+      const tunnel = state.tunnels.find(t => (t.tunnelId || t.name) === state.connectingTunnelId);
+      const tunnelName = tunnel?.name || state.connectingTunnelId;
+      const bodyLines = [
+        'Connecting to tunnel',
+        '',
+        `${spinnerFrame(state.spinnerIndex)} Connecting to ${tunnelName}...`,
+      ];
+      return {
+        output: renderScreenFrame({ rows, bodyLines, footerLines: ['Esc back'] }),
+      };
+    }
+
     const headerLines = ['Connect via Dev Tunnel', ''];
 
     if (state.loadingTunnels) {
-      const footerLines = ['Esc back'];
-      const bodyLines = [
-        ...headerLines,
-        ...(state.authView
-          ? [
-              state.authView.title,
-              ...state.authView.lines,
-              '',
-              `${spinnerFrame(state.spinnerIndex)} ${state.authView.statusMessage}`,
-            ]
-          : [`${spinnerFrame(state.spinnerIndex)} Loading tunnels...`]),
-      ];
+      if (state.authView) {
+        const bodyLines = [
+          ...headerLines,
+          state.authView.title,
+          ...state.authView.lines,
+          '',
+          `${spinnerFrame(state.spinnerIndex)} ${state.authView.statusMessage}`,
+        ];
+        return {
+          output: renderScreenFrame({ rows, bodyLines, footerLines: ['Esc back'] }),
+        };
+      }
 
+      const bodyLines = [
+        'Loading tunnels',
+        '',
+        `${spinnerFrame(state.spinnerIndex)} Loading tunnels...`,
+      ];
       return {
-        output: renderScreenFrame({ rows, bodyLines, footerLines }),
-        authStatusRow: state.authView ? bodyLines.length : undefined,
+        output: renderScreenFrame({ rows, bodyLines, footerLines: ['Esc back'] }),
       };
     }
 
@@ -155,9 +174,6 @@ export function buildStartupTargetSpinnerUpdate(
   state: StartupTargetScreenState,
   authStatusRow: number | undefined,
 ): string | null {
-  if (!state.loadingTunnels || state.mode !== 'tunnel-list' || !state.authView || !authStatusRow) {
-    return null;
-  }
-
-  return `\x1b[${authStatusRow};1H${CLEAR_LINE}${spinnerFrame(state.spinnerIndex)} ${state.authView.statusMessage}`;
+  // Spinner is now part of footer, no need for incremental updates
+  return null;
 }

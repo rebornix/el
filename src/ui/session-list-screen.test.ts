@@ -34,12 +34,29 @@ describe('renderSessionListFrame', () => {
       sessions: [],
       selectedIndex: 0,
       rows: 7,
-      statusMessage: 'Loading sessions…',
+      statusMessage: 'No sessions yet. Select "Create new session".',
     });
 
     const lines = frame.split('\n');
     assert.equal(lines.length, 7);
-    assert.equal(lines[5], 'Loading sessions…');
+    assert.equal(lines[5], 'No sessions yet. Select "Create new session".');
     assert.equal(lines[6], '↑/↓ select · Enter open · q quit');
+  });
+
+  it('renders loading state in-place', () => {
+    const frame = renderSessionListFrame({
+      sessions: [],
+      selectedIndex: 0,
+      rows: 7,
+      statusMessage: 'Loading sessions…',
+      loading: true,
+      spinnerIndex: 0,
+    });
+
+    const lines = frame.split('\n');
+    assert.equal(lines.length, 7);
+    assert.match(lines[0]!, /Loading sessions/);
+    assert.match(lines[2]!, /⠋ Loading sessions…/);
+    assert.equal(lines[6], 'Esc back');
   });
 });
