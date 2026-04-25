@@ -13,7 +13,7 @@ import { buildFolderDisplayEntries } from '../views/folder-picker-model.js';
 import { handleFolderPickerKey } from '../views/folder-picker-key-model.js';
 import { buildPiTuiSessionScreen, renderPiTuiSessionFrame } from './pi-tui-session-screen.js';
 import { renderCreateAgentFrame, renderFolderPickerFrame } from './create-session-screens.js';
-import { paintScreenFrame } from './screen-frame.js';
+import { paintScreenFrame, usableRows, usableCols } from './screen-frame.js';
 import { renderSessionListFrame } from './session-list-screen.js';
 import { mapKeypressToPiEvent, type KeypressLike } from './interactive-mode.js';
 import { createInteractiveScaffoldState } from './pi-tui-interactive-state.js';
@@ -155,12 +155,14 @@ export async function runPiTuiInteractiveScaffold(options?: {
   }
 
   function render(): void {
+    const rows = usableRows(stdout.rows || 24);
+    const cols = usableCols(stdout.columns || 80);
     if (mode === 'session-list') {
       stdout.write(paintScreenFrame(renderSessionListFrame({
         sessions,
         selectedIndex,
-        rows: stdout.rows || 24,
-        cols: stdout.columns || 80,
+        rows,
+        cols,
         statusMessage: getStatusWithLoader(sessionListStatus),
         openingSessionResource,
         spinnerIndex: currentLoader?.getFrameIndex() ?? 0,
@@ -171,7 +173,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
       stdout.write(paintScreenFrame(renderCreateAgentFrame({
         providers: createProviders,
         selectedIndex: createProviderIndex,
-        rows: stdout.rows || 24,
+        rows,
         statusMessage: getStatusWithLoader(createFolderStatus),
       })));
     } else if (mode === 'create-folder') {
@@ -179,7 +181,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
         currentUri: createFolderUri,
         entries: createFolderEntries,
         selectedIndex: createFolderIndex,
-        rows: stdout.rows || 24,
+        rows,
         statusMessage: getStatusWithLoader(createFolderStatus),
       })));
     } else {
@@ -188,8 +190,8 @@ export async function runPiTuiInteractiveScaffold(options?: {
         inputBeforeCursor: buf.beforeCursor,
         inputAfterCursor: buf.afterCursor,
         scrollLineOffset,
-        termCols: stdout.columns || 80,
-        termRows: stdout.rows || 24,
+        termCols: cols,
+        termRows: rows,
         footerLine: 'Esc back · Ctrl+C or q to exit',
       });
 
