@@ -30,8 +30,8 @@ describe('buildPiTuiSessionScreen', () => {
     });
 
     assert.ok(screen.lines.length > 0);
-    assert.equal(screen.contentRows, 23);
-    assert.equal(screen.inputLine, '> abc▊');
+    assert.equal(screen.contentRows, 22);
+    assert.equal(screen.inputLine, '› abc▊');
     assert.equal(screen.toolPrompt, undefined);
   });
 
@@ -64,7 +64,7 @@ describe('buildPiTuiSessionScreen', () => {
     });
 
     assert.equal(screen.toolPrompt?.displayName, 'Write File');
-    assert.equal(screen.contentRows, 22);
+    assert.equal(screen.contentRows, 21);
     assert.equal(screen.inputLine, undefined);
   });
 
@@ -83,6 +83,5 @@ describe('buildPiTuiSessionScreen', () => {
     assert.equal(lines.length, 8);
     assert.equal(lines[7], 'Esc back · Ctrl+C or q to exit');
     assert.equal(lines[6], '');
-    assert.equal(lines[5], '');
   });
 });

@@ -26,7 +26,7 @@ describe('renderPiTuiPreview', () => {
     });
 
     assert.ok(text.includes('--- pi-tui preview ---'));
-    assert.ok(text.includes('> abc▊'));
+    assert.ok(text.includes('› abc▊'));
   });
 
   it('renders tool prompt when pending confirmation exists', () => {
@@ -53,7 +53,7 @@ describe('renderPiTuiPreview', () => {
     });
 
     assert.ok(text.includes('[tool] Write File'));
-    assert.ok(!text.includes('> ▊'));
+    assert.ok(!text.includes('› ▊'));
   });
 
   it('can render without debug preview header', () => {
@@ -64,6 +64,6 @@ describe('renderPiTuiPreview', () => {
     });
 
     assert.ok(!text.includes('--- pi-tui preview ---'));
-    assert.ok(text.includes('> abc▊'));
+    assert.ok(text.includes('› abc▊'));
   });
 });

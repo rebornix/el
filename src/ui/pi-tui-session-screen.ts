@@ -67,12 +67,13 @@ function getSessionChromeRows(params: {
   pendingToolCall: ReturnType<typeof findPendingToolCall>;
   showStreamingIndicator: boolean;
 }): number {
+  const separatorRows = 1;
   const toolPromptRows = params.pendingToolCall
     ? 1 + (params.pendingToolCall.invocationMessage ? 1 : 0)
     : 0;
   const inputRows = params.pendingToolCall ? 0 : 1;
   const streamingRows = params.showStreamingIndicator ? 1 : 0;
-  return toolPromptRows + inputRows + streamingRows;
+  return separatorRows + toolPromptRows + inputRows + streamingRows;
 }
 
 /** Build session screen model: visible lines, input bar, tool prompts. */
@@ -131,7 +132,7 @@ export function buildPiTuiSessionScreen(params: {
     };
   }
 
-  const inputLine = `> ${inputBeforeCursor}▊${inputAfterCursor}`;
+  const inputLine = `› ${inputBeforeCursor}▊${inputAfterCursor}`;
 
   return {
     lines,
@@ -162,6 +163,7 @@ export function renderPiTuiSessionFrame(params: {
   });
 
   const lines = [...screen.lines];
+  lines.push(`${DIM}${'─'.repeat(params.termCols)}${RESET}`);
   if (screen.showStreamingIndicator) lines.push(`${DIM}▍ streaming${RESET}`);
   if (screen.toolPrompt) {
     lines.push(`${YELLOW}[tool]${RESET} ${BOLD}${screen.toolPrompt.displayName}${RESET}`);
