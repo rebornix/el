@@ -66,7 +66,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
   const tunnelName = options?.serverUrl?.startsWith('tunnel://')
     ? options.serverUrl.slice('tunnel://'.length)
     : undefined;
-  startSpinner(tunnelName ? `Connecting to ${tunnelName}…` : 'Connecting…', false);
+  startSpinner(tunnelName ? `Connecting to ${tunnelName}…` : 'Connecting…');
   try {
     const conn = await connectAhpClient({
       serverUrl: options?.serverUrl,

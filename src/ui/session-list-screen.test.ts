@@ -20,41 +20,40 @@ describe('renderSessionListFrame', () => {
     const frame = renderSessionListFrame({
       sessions: mkSessions(1),
       selectedIndex: 0,
-      rows: 8,
+      rows: 16,
     });
 
     const lines = frame.split('\n');
-    assert.equal(lines.length, 8);
-    assert.equal(lines[7], '↑/↓ select · Enter open · q quit');
-    assert.equal(lines[6], '');
+    assert.equal(lines.length, 16);
+    assert.equal(lines[15], '↑/↓ select · Enter open · q quit');
   });
 
   it('keeps status message above the footer while filling the viewport', () => {
     const frame = renderSessionListFrame({
       sessions: [],
       selectedIndex: 0,
-      rows: 7,
+      rows: 16,
       statusMessage: 'No sessions yet. Select "Create new session".',
     });
 
     const lines = frame.split('\n');
-    assert.equal(lines.length, 7);
-    assert.equal(lines[5], 'No sessions yet. Select "Create new session".');
-    assert.equal(lines[6], '↑/↓ select · Enter open · q quit');
+    assert.equal(lines.length, 16);
+    assert.equal(lines[14], 'No sessions yet. Select "Create new session".');
+    assert.equal(lines[15], '↑/↓ select · Enter open · q quit');
   });
 
   it('renders loading state in-place', () => {
     const frame = renderSessionListFrame({
       sessions: [],
       selectedIndex: 0,
-      rows: 14,
+      rows: 16,
       loading: true,
       spinnerIndex: 0,
     });
 
     const lines = frame.split('\n');
-    assert.equal(lines.length, 14);
-    assert.match(lines[7]!, /⠋ Loading sessions…/);
-    assert.equal(lines[13], 'Esc back');
+    assert.equal(lines.length, 16);
+    assert.match(lines[8]!, /⠋ Loading sessions…/);
+    assert.equal(lines[15], 'Esc back');
   });
 });

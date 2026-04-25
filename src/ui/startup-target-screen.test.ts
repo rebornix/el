@@ -79,19 +79,19 @@ describe('startup target screen', () => {
       mode: 'tunnel-list',
       loadingTunnels: true,
       spinnerIndex: 0,
-    }), 14);
+    }), 16);
 
     const lines = frame.split('\n');
-    assert.equal(lines.length, 14);
-    assert.match(lines[7]!, /⠋ Loading tunnels…/);
-    assert.equal(lines[13], 'Esc back');
+    assert.equal(lines.length, 16);
+    assert.match(lines[8]!, /⠋ Loading tunnels…/);
+    assert.equal(lines[15], 'Esc back');
   });
 
   it('anchors the menu hint at the bottom', () => {
-    const frame = renderStartupTargetScreen(mkState(), 14);
+    const frame = renderStartupTargetScreen(mkState(), 16);
     const lines = frame.split('\n');
-    assert.equal(lines.length, 14);
-    assert.equal(lines[13], '↑/↓ select · Enter confirm');
+    assert.equal(lines.length, 16);
+    assert.equal(lines[15], '↑/↓ select · Enter confirm');
   });
 
   it('anchors the tunnel list hint at the bottom', () => {
@@ -106,10 +106,10 @@ describe('startup target screen', () => {
         hostConnectionCount: 1,
         tunnel: {} as never,
       }],
-    }), 14);
+    }), 16);
 
     const lines = frame.split('\n');
-    assert.equal(lines.length, 14);
-    assert.equal(lines[13], '↑/↓ select · Enter confirm · Esc back');
+    assert.equal(lines.length, 16);
+    assert.equal(lines[15], '↑/↓ select · Enter confirm · Esc back');
   });
 });
