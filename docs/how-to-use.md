@@ -17,6 +17,7 @@ node dist/index.js --server ws://localhost:8081
 ## Notes
 
 - `el` shows loading/progress indicators while listing tunnels, creating sessions, and opening sessions.
+- An ASCII banner is displayed on all navigation screens (menu, tunnel list, session list).
 - Session list rows include title, folder, and provider metadata.
 - `el` attempts a best-effort live bootstrap from the server when it starts.
 - Tool confirmation prompts use `y` / `n` when present.
