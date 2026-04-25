@@ -47,15 +47,14 @@ describe('renderSessionListFrame', () => {
     const frame = renderSessionListFrame({
       sessions: [],
       selectedIndex: 0,
-      rows: 7,
+      rows: 14,
       loading: true,
       spinnerIndex: 0,
     });
 
     const lines = frame.split('\n');
-    assert.equal(lines.length, 7);
-    assert.match(lines[0]!, /Sessions/);
-    assert.match(lines[2]!, /⠋ Loading sessions…/);
-    assert.equal(lines[6], 'Esc back');
+    assert.equal(lines.length, 14);
+    assert.match(lines[7]!, /⠋ Loading sessions…/);
+    assert.equal(lines[13], 'Esc back');
   });
 });

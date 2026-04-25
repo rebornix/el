@@ -3,6 +3,7 @@ import { SessionStatus } from '../protocol/types/index.js';
 import { computeSessionListWindow } from '../views/session-list-model.js';
 import { uriToDisplayPath } from '../uri-helpers.js';
 import { computeWindowRows, renderScreenFrame } from './screen-frame.js';
+import { bannerLines, BANNER_LINE_COUNT } from './banner.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
 
@@ -38,19 +39,20 @@ export function renderSessionListFrame(params: {
   sessions: ISessionSummary[];
   selectedIndex: number;
   rows: number;
+  cols?: number;
   statusMessage?: string;
   openingSessionResource?: string;
   spinnerIndex?: number;
   loading?: boolean;
   loadingText?: string;
 }): string {
-  const { sessions, selectedIndex, rows, statusMessage, openingSessionResource, spinnerIndex = 0, loading, loadingText } = params;
+  const { sessions, selectedIndex, rows, cols = 80, statusMessage, openingSessionResource, spinnerIndex = 0, loading, loadingText } = params;
+  const banner = [...bannerLines(cols), ''];
 
   // Show loading state in-place
   if (loading) {
     const bodyLines = [
-      'Sessions',
-      '',
+      ...banner,
       `${spinnerFrame(spinnerIndex)} ${loadingText || 'Loading sessions…'}`,
     ];
     return renderScreenFrame({
@@ -65,8 +67,7 @@ export function renderSessionListFrame(params: {
     const session = sessions.find(s => s.resource === openingSessionResource);
     const sessionTitle = session ? toSingleLineTitle(session.title, 36) : openingSessionResource;
     const bodyLines = [
-      'Sessions',
-      '',
+      ...banner,
       `${spinnerFrame(spinnerIndex)} Opening ${sessionTitle}…`,
     ];
     return renderScreenFrame({
@@ -76,7 +77,7 @@ export function renderSessionListFrame(params: {
     });
   }
 
-  const headerLines = ['Sessions', ''];
+  const headerLines = [...banner, 'Sessions', ''];
   const footerLines = [
     ...(statusMessage ? [statusMessage] : []),
     '↑/↓ select · Enter open · q quit',

@@ -2,7 +2,7 @@ import type { TunnelInfo } from '../tunnel/discovery.js';
 import { MENU_OPTIONS, type ServerPromptMode } from '../views/server-prompt-model.js';
 import { computeSelectionWindow } from '../views/selection-window.js';
 import { computeWindowRows, renderScreenFrame } from './screen-frame.js';
-import { bannerLines } from './banner.js';
+import { bannerLines, BANNER_LINE_COUNT } from './banner.js';
 
 const CLEAR_LINE = '\x1b[2K';
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
@@ -39,15 +39,17 @@ function spinnerFrame(index: number): string {
 export function buildStartupTargetFrame(
   state: StartupTargetScreenState,
   rows: number,
+  cols: number = 80,
 ): StartupTargetFrame {
+  const banner = [...bannerLines(cols), ''];
+
   if (state.mode === 'tunnel-list') {
     // Show connecting state when a tunnel is being connected
     if (state.connectingTunnelId) {
       const tunnel = state.tunnels.find(t => (t.tunnelId || t.name) === state.connectingTunnelId);
       const tunnelName = tunnel?.name || state.connectingTunnelId;
       const bodyLines = [
-        'Connect via Dev Tunnel',
-        '',
+        ...banner,
         `${spinnerFrame(state.spinnerIndex)} Connecting to ${tunnelName}…`,
       ];
       return {
@@ -55,7 +57,7 @@ export function buildStartupTargetFrame(
       };
     }
 
-    const headerLines = ['Connect via Dev Tunnel', ''];
+    const headerLines = [...banner, 'Connect via Dev Tunnel', ''];
 
     if (state.loadingTunnels) {
       if (state.authView) {
@@ -72,8 +74,7 @@ export function buildStartupTargetFrame(
       }
 
       const bodyLines = [
-        'Connect via Dev Tunnel',
-        '',
+        ...banner,
         `${spinnerFrame(state.spinnerIndex)} Loading tunnels…`,
       ];
       return {
@@ -121,7 +122,7 @@ export function buildStartupTargetFrame(
   }
 
   if (state.mode === 'menu') {
-    const headerLines = [...bannerLines(), ''];
+    const headerLines = [...banner];
     const footerLines = ['↑/↓ select · Enter confirm'];
     const window = computeSelectionWindow({
       totalItems: MENU_OPTIONS.length,
@@ -153,8 +154,7 @@ export function buildStartupTargetFrame(
     output: renderScreenFrame({
       rows,
       bodyLines: [
-        'Connect to AHP server',
-        '',
+        ...banner,
         'Server URL (ws:// or wss://)',
         `> ${state.inputBeforeCursor}▊${state.inputAfterCursor}`,
         ...(state.error ? [state.error] : []),
@@ -167,8 +167,9 @@ export function buildStartupTargetFrame(
 export function renderStartupTargetScreen(
   state: StartupTargetScreenState,
   rows: number,
+  cols: number = 80,
 ): string {
-  return buildStartupTargetFrame(state, rows).output;
+  return buildStartupTargetFrame(state, rows, cols).output;
 }
 
 export function buildStartupTargetSpinnerUpdate(

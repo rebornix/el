@@ -35,10 +35,10 @@ describe('startup target screen', () => {
         ],
         statusMessage: 'Waiting for authorization...',
       },
-    }), 10);
+    }), 20);
 
     assert.equal(frame.authStatusRow, undefined);
-    assert.match(frame.output, /^Connect via Dev Tunnel/);
+    assert.match(frame.output, /Connect via Dev Tunnel/);
     assert.match(frame.output, /Authorize tunnel access/);
     assert.match(frame.output, /2\) Enter code: ABCD-EFGH/);
     assert.match(frame.output, /⠹ Waiting for authorization\.\.\./);
@@ -79,20 +79,19 @@ describe('startup target screen', () => {
       mode: 'tunnel-list',
       loadingTunnels: true,
       spinnerIndex: 0,
-    }), 7);
+    }), 14);
 
     const lines = frame.split('\n');
-    assert.equal(lines.length, 7);
-    assert.match(lines[0]!, /Connect via Dev Tunnel/);
-    assert.match(lines[2]!, /⠋ Loading tunnels…/);
-    assert.equal(lines[6], 'Esc back');
+    assert.equal(lines.length, 14);
+    assert.match(lines[7]!, /⠋ Loading tunnels…/);
+    assert.equal(lines[13], 'Esc back');
   });
 
   it('anchors the menu hint at the bottom', () => {
-    const frame = renderStartupTargetScreen(mkState(), 7);
+    const frame = renderStartupTargetScreen(mkState(), 14);
     const lines = frame.split('\n');
-    assert.equal(lines.length, 7);
-    assert.equal(lines[6], '↑/↓ select · Enter confirm');
+    assert.equal(lines.length, 14);
+    assert.equal(lines[13], '↑/↓ select · Enter confirm');
   });
 
   it('anchors the tunnel list hint at the bottom', () => {
@@ -107,10 +106,10 @@ describe('startup target screen', () => {
         hostConnectionCount: 1,
         tunnel: {} as never,
       }],
-    }), 7);
+    }), 14);
 
     const lines = frame.split('\n');
-    assert.equal(lines.length, 7);
-    assert.equal(lines[6], '↑/↓ select · Enter confirm · Esc back');
+    assert.equal(lines.length, 14);
+    assert.equal(lines[13], '↑/↓ select · Enter confirm · Esc back');
   });
 });

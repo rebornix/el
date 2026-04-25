@@ -160,6 +160,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
         sessions,
         selectedIndex,
         rows: stdout.rows || 24,
+        cols: stdout.columns || 80,
         statusMessage: getStatusWithLoader(sessionListStatus),
         openingSessionResource,
         spinnerIndex: currentLoader?.getFrameIndex() ?? 0,

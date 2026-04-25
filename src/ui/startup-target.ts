@@ -53,7 +53,7 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
   });
 
   const render = () => {
-    const frame = buildStartupTargetFrame(getScreenState(), stdout.rows || 24);
+    const frame = buildStartupTargetFrame(getScreenState(), stdout.rows || 24, stdout.columns || 80);
     authStatusRow = frame.authStatusRow;
     stdout.write(paintScreenFrame(frame.output));
   };
