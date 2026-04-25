@@ -63,10 +63,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
   let client: AhpClient | undefined;
   let disconnect: (() => void) | undefined;
 
-  const tunnelName = options?.serverUrl?.startsWith('tunnel://')
-    ? options.serverUrl.slice('tunnel://'.length)
-    : undefined;
-  startSpinner(tunnelName ? `Connecting to ${tunnelName}…` : 'Connecting…');
+  startSpinner('Loading…');
   try {
     const conn = await connectAhpClient({
       serverUrl: options?.serverUrl,
@@ -75,7 +72,6 @@ export async function runPiTuiInteractiveScaffold(options?: {
     });
     client = conn.client;
     disconnect = conn.disconnect;
-    startSpinner('Loading sessions…');
     const initialized = await client.initialize(clientId, ['agenthost:/root']);
     for (const snap of initialized.snapshots) {
       liveState.handleSnapshot(snap);
@@ -198,9 +194,6 @@ export async function runPiTuiInteractiveScaffold(options?: {
       stdout.write(paintScreenFrame(preview));
     }
   }
-
-  // Now render the initial state
-  render();
 
   async function loadCreateFolderEntries(): Promise<void> {
     if (!client) return;
