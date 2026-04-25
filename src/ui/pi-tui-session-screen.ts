@@ -33,9 +33,9 @@ function styleLine(line: ContentLine): string {
 
 function styleToolStatus(text: string): string {
   return text
-    .replace(/(│ )(✓)/, `$1${GREEN}$2${RESET}`)
-    .replace(/(│ )(✗)/, `$1${RED}$2${RESET}`)
-    .replace(/(│ )([⟳…⏳])/, `$1${YELLOW}$2${RESET}`)
+    .replace(/([│├└] )(✓)/, `$1${GREEN}$2${RESET}`)
+    .replace(/([│├└] )(✗)/, `$1${RED}$2${RESET}`)
+    .replace(/([│├└] )([⟳…⏳])/, `$1${YELLOW}$2${RESET}`)
     .replace(/( — .+)$/, `${DIM}$1${RESET}`);
 }
 

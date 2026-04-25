@@ -118,6 +118,23 @@ describe('renderTurnToLines', () => {
     assert.ok(toolLines[0].text.includes('✓'));
     assert.ok(toolLines[0].text.includes('ReadFile'));
     assert.ok(toolLines[0].text.includes('Read src/main.ts'));
+    // Single tool call keeps │ connector
+    assert.ok(toolLines[0].text.includes('│'));
+  });
+
+  it('uses tree connectors for consecutive tool calls', () => {
+    const turn = makeTurn('do it', [
+      toolCallPart('ReadFile', ToolCallStatus.Completed, 'Read a'),
+      toolCallPart('ReadFile', ToolCallStatus.Completed, 'Read b'),
+      toolCallPart('EditFile', ToolCallStatus.Running, 'Edit c'),
+    ]);
+    const lines = renderTurnToLines(turn, 80);
+
+    const toolLines = lines.filter(l => l.kind === 'tool-status');
+    assert.strictEqual(toolLines.length, 3);
+    assert.ok(toolLines[0].text.includes('├'), 'first in group should use ├');
+    assert.ok(toolLines[1].text.includes('├'), 'middle in group should use ├');
+    assert.ok(toolLines[2].text.includes('└'), 'last in group should use └');
   });
 
   it('renders turn error state', () => {

@@ -107,8 +107,16 @@ export function renderTurnToLines(turn: ITurn | IActiveTurn, termCols: number): 
 
   // ── Assistant response ──
   lines.push({ text: '  Assistant', kind: 'user-label' });
-  for (const part of turn.responseParts) {
-    renderPartToLines(part, contentWidth, lines);
+  const parts = turn.responseParts;
+  for (let i = 0; i < parts.length; i++) {
+    let toolConnector: string | undefined;
+    if (parts[i].kind === ResponsePartKind.ToolCall) {
+      const prevIsTC = i > 0 && parts[i - 1].kind === ResponsePartKind.ToolCall;
+      const nextIsTC = i + 1 < parts.length && parts[i + 1].kind === ResponsePartKind.ToolCall;
+      const inGroup = prevIsTC || nextIsTC;
+      toolConnector = inGroup ? (nextIsTC ? '├' : '└') : '│';
+    }
+    renderPartToLines(parts[i], contentWidth, lines, toolConnector);
   }
 
   // ── Turn state indicators ──
@@ -128,7 +136,7 @@ export function renderTurnToLines(turn: ITurn | IActiveTurn, termCols: number): 
   return lines;
 }
 
-function renderPartToLines(part: IResponsePart, contentWidth: number, lines: ContentLine[]): void {
+function renderPartToLines(part: IResponsePart, contentWidth: number, lines: ContentLine[], toolConnector?: string): void {
   switch (part.kind) {
     case ResponsePartKind.Markdown: {
       if (!part.content) return;
@@ -141,6 +149,7 @@ function renderPartToLines(part: IResponsePart, contentWidth: number, lines: Con
     case ResponsePartKind.ToolCall: {
       const tc = part.toolCall;
       const icon = toolStatusIcon(tc.status);
+      const connector = toolConnector ?? '│';
       let label = `${icon} ${tc.displayName}`;
       if ('invocationMessage' in tc && tc.invocationMessage) {
         const msg = typeof tc.invocationMessage === 'string'
@@ -148,7 +157,7 @@ function renderPartToLines(part: IResponsePart, contentWidth: number, lines: Con
           : tc.invocationMessage.markdown;
         label += ` — ${truncate(msg, 80)}`;
       }
-      lines.push({ text: '  │ ' + label, kind: 'tool-status' });
+      lines.push({ text: `  ${connector} ${label}`, kind: 'tool-status' });
 
       // Tool results
       if ('content' in tc && Array.isArray(tc.content)) {
