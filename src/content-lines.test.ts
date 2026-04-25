@@ -137,6 +137,38 @@ describe('renderTurnToLines', () => {
     assert.ok(toolLines[2].text.includes('└'), 'last in group should use └');
   });
 
+  it('indents tool results under grouped calls', () => {
+    const partWithResult = {
+      kind: ResponsePartKind.ToolCall,
+      toolCall: {
+        toolCallId: 'tc-1', toolName: 'test', displayName: 'ReadFile',
+        status: ToolCallStatus.Completed, invocationMessage: 'Read a',
+        confirmed: ToolCallConfirmationReason.UserAction,
+        content: [{ type: 'text', text: 'file contents here' }],
+      },
+    } as IToolCallResponsePart;
+    const turn = makeTurn('do it', [
+      partWithResult,
+      toolCallPart('EditFile', ToolCallStatus.Completed, 'Edit b'),
+    ]);
+    const lines = renderTurnToLines(turn, 80);
+
+    const resultLines = lines.filter(l => l.kind === 'tool-result');
+    assert.ok(resultLines.length > 0, 'should have result lines');
+    assert.ok(resultLines[0].text.startsWith('      '), 'result lines use plain indentation');
+  });
+
+  it('strips markdown links from invocation messages', () => {
+    const turn = makeTurn('do it', [
+      toolCallPart('View File', ToolCallStatus.Completed, 'Reading [auth.ts](file:///path/to/auth.ts)'),
+    ]);
+    const lines = renderTurnToLines(turn, 80);
+
+    const toolLine = lines.find(l => l.kind === 'tool-status')!;
+    assert.ok(toolLine.text.includes('auth.ts'), 'should include file name');
+    assert.ok(!toolLine.text.includes(']('), 'should not contain markdown link syntax');
+  });
+
   it('renders turn error state', () => {
     const turn = makeTurn('oops');
     turn.state = TurnState.Error;

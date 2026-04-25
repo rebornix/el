@@ -2,6 +2,7 @@ import type { TunnelInfo } from '../tunnel/discovery.js';
 import { MENU_OPTIONS, type ServerPromptMode } from '../views/server-prompt-model.js';
 import { computeSelectionWindow } from '../views/selection-window.js';
 import { computeWindowRows, renderScreenFrame } from './screen-frame.js';
+import { bannerLines } from './banner.js';
 
 const CLEAR_LINE = '\x1b[2K';
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
@@ -120,7 +121,7 @@ export function buildStartupTargetFrame(
   }
 
   if (state.mode === 'menu') {
-    const headerLines = ['Connect to AHP server', ''];
+    const headerLines = [...bannerLines(), ''];
     const footerLines = ['↑/↓ select · Enter confirm'];
     const window = computeSelectionWindow({
       totalItems: MENU_OPTIONS.length,

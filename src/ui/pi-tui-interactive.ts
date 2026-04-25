@@ -25,7 +25,7 @@ import { Loader, type LoaderStyle } from './loader.js';
 
 type ScreenMode = 'session-list' | 'create-agent' | 'create-folder' | 'session';
 
-const DEFAULT_LOADER_STYLE: LoaderStyle = 'spinner';
+const DEFAULT_LOADER_STYLE: LoaderStyle = 'gradient';
 
 export async function runPiTuiInteractiveScaffold(options?: {
   serverUrl?: string;
