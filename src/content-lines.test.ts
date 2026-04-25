@@ -169,6 +169,30 @@ describe('renderTurnToLines', () => {
     assert.ok(!toolLine.text.includes(']('), 'should not contain markdown link syntax');
   });
 
+  it('collapses consecutive blank lines in tool result text', () => {
+    const part: IToolCallResponsePart = {
+      kind: ResponsePartKind.ToolCall,
+      toolCall: {
+        toolCallId: 'tc-1',
+        toolName: 'bash',
+        displayName: 'Bash',
+        status: ToolCallStatus.Completed,
+        confirmed: ToolCallConfirmationReason.UserAction,
+        content: [{ type: 'text' as any, text: 'line1\n\n\n\n\nline2\n\n\n' }],
+      },
+    } as IToolCallResponsePart;
+    const turn = makeTurn('run it', [part]);
+    const lines = renderTurnToLines(turn, 80);
+    const resultLines = lines.filter(l => l.kind === 'tool-result');
+    // Should have: line1, blank, line2 — no runs of 3+ blank lines
+    const texts = resultLines.map(l => l.text.trim());
+    let consecutive = 0;
+    for (const t of texts) {
+      consecutive = t === '' ? consecutive + 1 : 0;
+      assert.ok(consecutive <= 1, 'should not have more than 1 consecutive blank line');
+    }
+  });
+
   it('renders turn error state', () => {
     const turn = makeTurn('oops');
     turn.state = TurnState.Error;

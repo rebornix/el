@@ -205,7 +205,8 @@ function renderToolResultToLines(c: IToolResultContent, contentWidth: number, li
   const maxLen = contentWidth - prefix.length;
   switch (c.type) {
     case ToolResultContentType.Text: {
-      const txt = truncate(c.text, 200);
+      const collapsed = c.text.replace(/\n{3,}/g, '\n\n').trim();
+      const txt = truncate(collapsed, 200);
       for (const wrapped of wrapText(txt, maxLen)) {
         lines.push({ text: prefix + wrapped, kind: 'tool-result' });
       }
