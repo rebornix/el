@@ -75,6 +75,10 @@ export function wrapText(text: string, width: number): string[] {
   return lines;
 }
 
+function stripMarkdownLinks(text: string): string {
+  return text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+}
+
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return text.slice(0, maxLen - 1) + '…';
@@ -107,8 +111,16 @@ export function renderTurnToLines(turn: ITurn | IActiveTurn, termCols: number): 
 
   // ── Assistant response ──
   lines.push({ text: '  Assistant', kind: 'user-label' });
-  for (const part of turn.responseParts) {
-    renderPartToLines(part, contentWidth, lines);
+  const parts = turn.responseParts;
+  for (let i = 0; i < parts.length; i++) {
+    let toolConnector: string | undefined;
+    if (parts[i].kind === ResponsePartKind.ToolCall) {
+      const prevIsTC = i > 0 && parts[i - 1].kind === ResponsePartKind.ToolCall;
+      const nextIsTC = i + 1 < parts.length && parts[i + 1].kind === ResponsePartKind.ToolCall;
+      const inGroup = prevIsTC || nextIsTC;
+      toolConnector = inGroup ? (nextIsTC ? '├' : '└') : '│';
+    }
+    renderPartToLines(parts[i], contentWidth, lines, toolConnector);
   }
 
   // ── Turn state indicators ──
@@ -128,7 +140,7 @@ export function renderTurnToLines(turn: ITurn | IActiveTurn, termCols: number): 
   return lines;
 }
 
-function renderPartToLines(part: IResponsePart, contentWidth: number, lines: ContentLine[]): void {
+function renderPartToLines(part: IResponsePart, contentWidth: number, lines: ContentLine[], toolConnector?: string): void {
   switch (part.kind) {
     case ResponsePartKind.Markdown: {
       if (!part.content) return;
@@ -141,19 +153,25 @@ function renderPartToLines(part: IResponsePart, contentWidth: number, lines: Con
     case ResponsePartKind.ToolCall: {
       const tc = part.toolCall;
       const icon = toolStatusIcon(tc.status);
+      const connector = toolConnector ?? '│';
       let label = `${icon} ${tc.displayName}`;
       if ('invocationMessage' in tc && tc.invocationMessage) {
-        const msg = typeof tc.invocationMessage === 'string'
+        const raw = typeof tc.invocationMessage === 'string'
           ? tc.invocationMessage
           : tc.invocationMessage.markdown;
-        label += ` — ${truncate(msg, 80)}`;
+        // prefix "  ├ " (4) + label + " — " (3) = overhead before message
+        const msgBudget = contentWidth - 4 - label.length - 3;
+        label += ` — ${truncate(stripMarkdownLinks(raw), Math.max(20, msgBudget))}`;
       }
-      lines.push({ text: '  │ ' + label, kind: 'tool-status' });
+      lines.push({ text: `  ${connector} ${label}`, kind: 'tool-status' });
+
+      // Indent child lines under tool status
+      const resultPrefix = '      ';
 
       // Tool results
       if ('content' in tc && Array.isArray(tc.content)) {
         for (const c of tc.content as IToolResultContent[]) {
-          renderToolResultToLines(c, contentWidth, lines);
+          renderToolResultToLines(c, contentWidth, lines, resultPrefix);
         }
       }
 
@@ -162,63 +180,64 @@ function renderPartToLines(part: IResponsePart, contentWidth: number, lines: Con
         const message = typeof tc.error === 'object' && tc.error && 'message' in tc.error
           ? String((tc.error as { message?: string }).message ?? 'Error')
           : 'Error';
-        lines.push({ text: `  │ ⚠ ${message}`, kind: 'turn-error' });
+        lines.push({ text: `${resultPrefix}⚠ ${message}`, kind: 'turn-error' });
       }
       return;
     }
 
     case ResponsePartKind.Reasoning: {
       if (!part.content) return;
-      lines.push({ text: `  │ 💭 ${truncate(part.content, 120)}`, kind: 'reasoning' });
+      // prefix "  │ 💭 " = 7 visible chars (💭 is double-width)
+      lines.push({ text: `  │ 💭 ${truncate(part.content, contentWidth - 7)}`, kind: 'reasoning' });
       return;
     }
 
     case ResponsePartKind.ContentRef: {
       let label = `📎 ${part.uri}`;
       if (part.contentType) label += ` (${part.contentType})`;
-      lines.push({ text: '  │ ' + label, kind: 'content-ref' });
+      lines.push({ text: '  │ ' + truncate(label, contentWidth - 4), kind: 'content-ref' });
       return;
     }
   }
 }
 
-function renderToolResultToLines(c: IToolResultContent, contentWidth: number, lines: ContentLine[]): void {
+function renderToolResultToLines(c: IToolResultContent, contentWidth: number, lines: ContentLine[], prefix: string): void {
+  const maxLen = contentWidth - prefix.length;
   switch (c.type) {
     case ToolResultContentType.Text: {
-      const txt = truncate(c.text, 200);
-      for (const wrapped of wrapText(txt, contentWidth - 4)) {
-        lines.push({ text: '    ' + wrapped, kind: 'tool-result' });
+      const collapsed = c.text.replace(/\n{3,}/g, '\n\n').trim();
+      const txt = truncate(collapsed, 200);
+      for (const wrapped of wrapText(txt, maxLen)) {
+        lines.push({ text: prefix + wrapped, kind: 'tool-result' });
       }
       return;
     }
     case ToolResultContentType.EmbeddedResource: {
-      lines.push({
-        text: `    📦 embedded ${c.contentType || ''} (${c.data?.length || 0} bytes b64)`,
-        kind: 'tool-result',
-      });
+      const body = `📦 embedded ${c.contentType || ''} (${c.data?.length || 0} bytes b64)`;
+      lines.push({ text: prefix + truncate(body, maxLen), kind: 'tool-result' });
       return;
     }
     case ToolResultContentType.Resource: {
-      let label = `    📎 ${c.uri}`;
-      if (c.contentType) label += ` (${c.contentType})`;
-      lines.push({ text: label, kind: 'tool-result' });
+      let body = `📎 ${c.uri}`;
+      if (c.contentType) body += ` (${c.contentType})`;
+      lines.push({ text: prefix + truncate(body, maxLen), kind: 'tool-result' });
       return;
     }
     case ToolResultContentType.FileEdit: {
-      let label = '    📝 ';
+      let body = '📝 ';
       const before = c.before?.uri;
       const after = c.after?.uri;
-      if (!before && after) label += `created ${after}`;
-      else if (before && !after) label += `deleted ${before}`;
-      else if (before && after && before !== after) label += `renamed ${before} → ${after}`;
-      else label += `edited ${after ?? before ?? 'file'}`;
+      if (!before && after) body += `created ${after}`;
+      else if (before && !after) body += `deleted ${before}`;
+      else if (before && after && before !== after) body += `renamed ${before} → ${after}`;
+      else body += `edited ${after ?? before ?? 'file'}`;
       if (c.diff) {
         const parts: string[] = [];
         if (c.diff.added) parts.push(`+${c.diff.added}`);
         if (c.diff.removed) parts.push(`-${c.diff.removed}`);
-        if (parts.length) label += ` (${parts.join(', ')})`;
+        if (parts.length) body += ` (${parts.join(', ')})`;
       }
-      lines.push({ text: label, kind: 'tool-result' });
+      lines.push({ text: prefix + truncate(body, maxLen), kind: 'tool-result' });
       return;
     }
   }

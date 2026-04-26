@@ -12,7 +12,7 @@ import {
   type StartupAuthViewState,
   type StartupTargetScreenState,
 } from './startup-target-screen.js';
-import { paintScreenFrame } from './screen-frame.js';
+import { paintScreenFrame, usableRows, usableCols } from './screen-frame.js';
 import type { TunnelAuthProvider } from '../auth/tunnel-auth.js';
 
 interface StartupPromptOptions {
@@ -36,6 +36,7 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
   let spinnerTimer: ReturnType<typeof setInterval> | undefined;
   let authView: StartupAuthViewState | undefined;
   let authStatusRow: number | undefined;
+  let connectingTunnelId: string | undefined;
 
   const getScreenState = (): StartupTargetScreenState => ({
     mode,
@@ -48,10 +49,11 @@ export async function promptStartupTarget(options?: StartupPromptOptions): Promi
     loadingTunnels,
     spinnerIndex,
     authView,
+    connectingTunnelId,
   });
 
   const render = () => {
-    const frame = buildStartupTargetFrame(getScreenState(), stdout.rows || 24);
+    const frame = buildStartupTargetFrame(getScreenState(), usableRows(stdout.rows || 24), usableCols(stdout.columns || 80));
     authStatusRow = frame.authStatusRow;
     stdout.write(paintScreenFrame(frame.output));
   };

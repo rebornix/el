@@ -35,16 +35,21 @@ describe('startup target screen', () => {
         ],
         statusMessage: 'Waiting for authorization...',
       },
-    }), 10);
+    }), 20);
 
-    assert.equal(frame.authStatusRow, 7);
-    assert.match(frame.output, /^Connect via Dev Tunnel/);
+    assert.equal(frame.authStatusRow, undefined);
+    assert.match(frame.output, /Connect via Dev Tunnel/);
     assert.match(frame.output, /Authorize tunnel access/);
     assert.match(frame.output, /2\) Enter code: ABCD-EFGH/);
     assert.match(frame.output, /⠹ Waiting for authorization\.\.\./);
+    // Spinner should be in body, not footer
+    const lines = frame.output.split('\n');
+    const spinnerLine = lines.findIndex(l => l.includes('⠹ Waiting for authorization...'));
+    const escLine = lines.findIndex(l => l.includes('Esc back'));
+    assert.ok(spinnerLine < escLine, 'spinner should appear in body before footer');
   });
 
-  it('updates only the auth status line during spinner ticks', () => {
+  it('falls back to full re-render when loading with auth prompt', () => {
     const update = buildStartupTargetSpinnerUpdate(mkState({
       mode: 'tunnel-list',
       loadingTunnels: true,
@@ -56,8 +61,7 @@ describe('startup target screen', () => {
       },
     }), 5);
 
-    assert.equal(update, '\x1b[5;1H\x1b[2K⠸ Waiting for authorization...');
-    assert.doesNotMatch(update ?? '', /\x1b\[2J\x1b\[H/);
+    assert.equal(update, null);
   });
 
   it('falls back to full re-render when no auth prompt is active', () => {
@@ -70,11 +74,24 @@ describe('startup target screen', () => {
     assert.equal(update, null);
   });
 
-  it('anchors the menu hint at the bottom', () => {
-    const frame = renderStartupTargetScreen(mkState(), 7);
+  it('renders loading tunnels spinner in-place', () => {
+    const frame = renderStartupTargetScreen(mkState({
+      mode: 'tunnel-list',
+      loadingTunnels: true,
+      spinnerIndex: 0,
+    }), 16);
+
     const lines = frame.split('\n');
-    assert.equal(lines.length, 7);
-    assert.equal(lines[6], '↑/↓ select · Enter confirm');
+    assert.equal(lines.length, 16);
+    assert.match(lines[8]!, /⠋ Loading tunnels…/);
+    assert.equal(lines[15], 'Esc back');
+  });
+
+  it('anchors the menu hint at the bottom', () => {
+    const frame = renderStartupTargetScreen(mkState(), 16);
+    const lines = frame.split('\n');
+    assert.equal(lines.length, 16);
+    assert.equal(lines[15], '↑/↓ select · Enter confirm');
   });
 
   it('anchors the tunnel list hint at the bottom', () => {
@@ -89,10 +106,10 @@ describe('startup target screen', () => {
         hostConnectionCount: 1,
         tunnel: {} as never,
       }],
-    }), 7);
+    }), 16);
 
     const lines = frame.split('\n');
-    assert.equal(lines.length, 7);
-    assert.equal(lines[6], '↑/↓ select · Enter confirm · Esc back');
+    assert.equal(lines.length, 16);
+    assert.equal(lines[15], '↑/↓ select · Enter confirm · Esc back');
   });
 });

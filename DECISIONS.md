@@ -47,3 +47,42 @@ Existing violations in `pi-tui-interactive.ts` and `startup-target.ts` are ackno
 - New files must pass the "one sentence without 'and'" litmus test.
 - PRs adding logic to known god-objects should include a decomposition step or explain why deferral is appropriate.
 - The `views/` pattern (pure key-model + pure display-model + separate screen renderer) is the reference architecture for new TUI features.
+
+## 2026-04-25 — ANSI styling applied after wrapping, never in content-lines
+
+### Context
+Content lines go through a pipeline: `content-lines.ts` produces plain-text `ContentLine[]` with `.text` and `.kind`, then `pi-tui-session-screen.ts` applies ANSI styling via `styleLine()`. `wrapText()` wraps by character count and would break if ANSI escape sequences were embedded in the text.
+
+### Decision
+ANSI color/style codes are applied in the rendering layer (`pi-tui-session-screen.ts`), never in the data layer (`content-lines.ts`). The `.kind` field on `ContentLine` carries semantic intent; the renderer maps kind → style.
+
+### Consequences
+- `content-lines.ts` must never import ANSI constants or embed escape sequences.
+- New content line kinds require a corresponding case in `styleLine()`.
+- Width calculations in `wrapText()` and `truncate()` remain simple character counting.
+
+## 2026-04-25 — Global UI padding via screen-frame, not per-screen
+
+### Context
+Adding consistent padding (left margin, bottom margin) across all TUI screens required a single application point rather than per-screen adjustments.
+
+### Decision
+`screen-frame.ts` owns global padding via `FRAME_PAD_LEFT` and `FRAME_PAD_BOTTOM` constants. `paintScreenFrame` prepends left padding to every line. All screen builders use `usableRows()` and `usableCols()` to compute available space after padding. No screen should apply its own left/bottom padding.
+
+### Consequences
+- Changing global padding is a single constant change in `screen-frame.ts`.
+- Screen builders must always use `usableRows()`/`usableCols()`, not raw terminal dimensions.
+- Per-screen content padding (e.g., indentation within session chat) is additive on top of global padding.
+
+## 2026-04-25 — Tool result text is trimmed and collapsed before rendering
+
+### Context
+Tool results (especially bash/shell output) often contain runs of blank lines from truncated terminal output. These rendered as excessive whitespace gaps in the session view.
+
+### Decision
+In `renderToolResultToLines`, text content is `.trim()`-ed and consecutive runs of 3+ newlines are collapsed to 2 (`\n\n`) before truncation and wrapping. This keeps at most one visual blank line between paragraphs of tool output.
+
+### Consequences
+- Tool result rendering is compact by default; no configuration needed.
+- The 200-character truncation limit (`truncate(collapsed, 200)`) applies after collapsing, so more meaningful content fits within the budget.
+- Future tool result types (embedded resources, file edits) are single-line and unaffected.

@@ -2,6 +2,7 @@ import type { TunnelInfo } from '../tunnel/discovery.js';
 import { MENU_OPTIONS, type ServerPromptMode } from '../views/server-prompt-model.js';
 import { computeSelectionWindow } from '../views/selection-window.js';
 import { computeWindowRows, renderScreenFrame } from './screen-frame.js';
+import { bannerLines, BANNER_LINE_COUNT } from './banner.js';
 
 const CLEAR_LINE = '\x1b[2K';
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
@@ -23,6 +24,7 @@ export interface StartupTargetScreenState {
   loadingTunnels: boolean;
   spinnerIndex: number;
   authView?: StartupAuthViewState;
+  connectingTunnelId?: string;
 }
 
 interface StartupTargetFrame {
@@ -37,27 +39,46 @@ function spinnerFrame(index: number): string {
 export function buildStartupTargetFrame(
   state: StartupTargetScreenState,
   rows: number,
+  cols: number = 80,
 ): StartupTargetFrame {
+  const banner = [...bannerLines(cols), ''];
+
   if (state.mode === 'tunnel-list') {
-    const headerLines = ['Connect via Dev Tunnel', ''];
+    // Show connecting state when a tunnel is being connected
+    if (state.connectingTunnelId) {
+      const tunnel = state.tunnels.find(t => (t.tunnelId || t.name) === state.connectingTunnelId);
+      const tunnelName = tunnel?.name || state.connectingTunnelId;
+      const bodyLines = [
+        ...banner,
+        `${spinnerFrame(state.spinnerIndex)} Connecting to ${tunnelName}…`,
+      ];
+      return {
+        output: renderScreenFrame({ rows, bodyLines, footerLines: ['Esc back'] }),
+      };
+    }
+
+    const headerLines = [...banner, 'Connect via Dev Tunnel', ''];
 
     if (state.loadingTunnels) {
-      const footerLines = ['Esc back'];
-      const bodyLines = [
-        ...headerLines,
-        ...(state.authView
-          ? [
-              state.authView.title,
-              ...state.authView.lines,
-              '',
-              `${spinnerFrame(state.spinnerIndex)} ${state.authView.statusMessage}`,
-            ]
-          : [`${spinnerFrame(state.spinnerIndex)} Loading tunnels...`]),
-      ];
+      if (state.authView) {
+        const bodyLines = [
+          ...headerLines,
+          state.authView.title,
+          ...state.authView.lines,
+          '',
+          `${spinnerFrame(state.spinnerIndex)} ${state.authView.statusMessage}`,
+        ];
+        return {
+          output: renderScreenFrame({ rows, bodyLines, footerLines: ['Esc back'] }),
+        };
+      }
 
+      const bodyLines = [
+        ...banner,
+        `${spinnerFrame(state.spinnerIndex)} Loading tunnels…`,
+      ];
       return {
-        output: renderScreenFrame({ rows, bodyLines, footerLines }),
-        authStatusRow: state.authView ? bodyLines.length : undefined,
+        output: renderScreenFrame({ rows, bodyLines, footerLines: ['Esc back'] }),
       };
     }
 
@@ -101,7 +122,7 @@ export function buildStartupTargetFrame(
   }
 
   if (state.mode === 'menu') {
-    const headerLines = ['Connect to AHP server', ''];
+    const headerLines = [...banner];
     const footerLines = ['↑/↓ select · Enter confirm'];
     const window = computeSelectionWindow({
       totalItems: MENU_OPTIONS.length,
@@ -133,8 +154,7 @@ export function buildStartupTargetFrame(
     output: renderScreenFrame({
       rows,
       bodyLines: [
-        'Connect to AHP server',
-        '',
+        ...banner,
         'Server URL (ws:// or wss://)',
         `> ${state.inputBeforeCursor}▊${state.inputAfterCursor}`,
         ...(state.error ? [state.error] : []),
@@ -147,17 +167,15 @@ export function buildStartupTargetFrame(
 export function renderStartupTargetScreen(
   state: StartupTargetScreenState,
   rows: number,
+  cols: number = 80,
 ): string {
-  return buildStartupTargetFrame(state, rows).output;
+  return buildStartupTargetFrame(state, rows, cols).output;
 }
 
 export function buildStartupTargetSpinnerUpdate(
   state: StartupTargetScreenState,
   authStatusRow: number | undefined,
 ): string | null {
-  if (!state.loadingTunnels || state.mode !== 'tunnel-list' || !state.authView || !authStatusRow) {
-    return null;
-  }
-
-  return `\x1b[${authStatusRow};1H${CLEAR_LINE}${spinnerFrame(state.spinnerIndex)} ${state.authView.statusMessage}`;
+  // Spinner is now part of footer, no need for incremental updates
+  return null;
 }

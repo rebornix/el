@@ -3,6 +3,13 @@ import { SessionStatus } from '../protocol/types/index.js';
 import { computeSessionListWindow } from '../views/session-list-model.js';
 import { uriToDisplayPath } from '../uri-helpers.js';
 import { computeWindowRows, renderScreenFrame } from './screen-frame.js';
+import { bannerLines, BANNER_LINE_COUNT } from './banner.js';
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
+
+function spinnerFrame(index: number): string {
+  return SPINNER_FRAMES[index % SPINNER_FRAMES.length]!;
+}
 
 function toSingleLineTitle(raw: string | undefined, max = 72): string {
   const base = (raw ?? '(untitled)')
@@ -11,28 +18,66 @@ function toSingleLineTitle(raw: string | undefined, max = 72): string {
     .replace(/<reminder>[\s\S]*?<\/reminder>/gi, ' ')
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .replace(/^[-*•]\s+/, '');
 
   if (base.length <= max) return base;
   return `${base.slice(0, Math.max(1, max - 1))}…`;
 }
 
-function folderNameFromSummary(s: ISessionSummary): string {
+function folderNameFromSummary(s: ISessionSummary, max = 20): string {
   const wd = s.workingDirectory;
   if (!wd) return 'no-folder';
   const path = uriToDisplayPath(wd);
   const parts = path.split('/').filter(Boolean);
-  return parts[parts.length - 1] ?? '/';
+  const name = parts[parts.length - 1] ?? '/';
+  if (name.length <= max) return name;
+  return name.slice(0, max - 1) + '…';
 }
 
 export function renderSessionListFrame(params: {
   sessions: ISessionSummary[];
   selectedIndex: number;
   rows: number;
+  cols?: number;
   statusMessage?: string;
+  openingSessionResource?: string;
+  spinnerIndex?: number;
+  loading?: boolean;
+  loadingText?: string;
 }): string {
-  const { sessions, selectedIndex, rows, statusMessage } = params;
-  const headerLines = ['Sessions', ''];
+  const { sessions, selectedIndex, rows, cols = 80, statusMessage, openingSessionResource, spinnerIndex = 0, loading, loadingText } = params;
+  const banner = [...bannerLines(cols), ''];
+
+  // Show loading state in-place
+  if (loading) {
+    const bodyLines = [
+      ...banner,
+      `${spinnerFrame(spinnerIndex)} ${loadingText || 'Loading sessions…'}`,
+    ];
+    return renderScreenFrame({
+      rows,
+      bodyLines,
+      footerLines: ['Esc back'],
+    });
+  }
+
+  // Show opening state when a session is being opened
+  if (openingSessionResource) {
+    const session = sessions.find(s => s.resource === openingSessionResource);
+    const sessionTitle = session ? toSingleLineTitle(session.title, 36) : openingSessionResource;
+    const bodyLines = [
+      ...banner,
+      `${spinnerFrame(spinnerIndex)} Opening ${sessionTitle}…`,
+    ];
+    return renderScreenFrame({
+      rows,
+      bodyLines,
+      footerLines: ['Esc back'],
+    });
+  }
+
+  const headerLines = [...banner, 'Sessions', ''];
   const footerLines = [
     ...(statusMessage ? [statusMessage] : []),
     '↑/↓ select · Enter open · q quit',
@@ -52,14 +97,17 @@ export function renderSessionListFrame(params: {
     }),
   });
 
+  const providers = new Set(sessions.map(s => s.provider).filter(Boolean));
+  const showProvider = providers.size > 1;
+
   const items: Array<{ label: string }> = [
-    { label: 'Create new session' },
+    { label: '+ Create new session' },
     ...sessions.map((s) => {
       const active = (s.status & SessionStatus.InProgress) === SessionStatus.InProgress;
       const title = toSingleLineTitle(s.title, 44);
       const folder = folderNameFromSummary(s);
-      const provider = s.provider || 'unknown';
-      return { label: `${active ? '◉' : '○'} ${title}  [${folder}] (${provider})` };
+      const suffix = showProvider ? `  [${folder}] (${s.provider || 'unknown'})` : `  [${folder}]`;
+      return { label: `${active ? '◉' : '○'} ${title}${suffix}` };
     }),
   ];
 

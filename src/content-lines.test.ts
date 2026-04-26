@@ -118,6 +118,79 @@ describe('renderTurnToLines', () => {
     assert.ok(toolLines[0].text.includes('✓'));
     assert.ok(toolLines[0].text.includes('ReadFile'));
     assert.ok(toolLines[0].text.includes('Read src/main.ts'));
+    // Single tool call keeps │ connector
+    assert.ok(toolLines[0].text.includes('│'));
+  });
+
+  it('uses tree connectors for consecutive tool calls', () => {
+    const turn = makeTurn('do it', [
+      toolCallPart('ReadFile', ToolCallStatus.Completed, 'Read a'),
+      toolCallPart('ReadFile', ToolCallStatus.Completed, 'Read b'),
+      toolCallPart('EditFile', ToolCallStatus.Running, 'Edit c'),
+    ]);
+    const lines = renderTurnToLines(turn, 80);
+
+    const toolLines = lines.filter(l => l.kind === 'tool-status');
+    assert.strictEqual(toolLines.length, 3);
+    assert.ok(toolLines[0].text.includes('├'), 'first in group should use ├');
+    assert.ok(toolLines[1].text.includes('├'), 'middle in group should use ├');
+    assert.ok(toolLines[2].text.includes('└'), 'last in group should use └');
+  });
+
+  it('indents tool results under grouped calls', () => {
+    const partWithResult = {
+      kind: ResponsePartKind.ToolCall,
+      toolCall: {
+        toolCallId: 'tc-1', toolName: 'test', displayName: 'ReadFile',
+        status: ToolCallStatus.Completed, invocationMessage: 'Read a',
+        confirmed: ToolCallConfirmationReason.UserAction,
+        content: [{ type: 'text', text: 'file contents here' }],
+      },
+    } as IToolCallResponsePart;
+    const turn = makeTurn('do it', [
+      partWithResult,
+      toolCallPart('EditFile', ToolCallStatus.Completed, 'Edit b'),
+    ]);
+    const lines = renderTurnToLines(turn, 80);
+
+    const resultLines = lines.filter(l => l.kind === 'tool-result');
+    assert.ok(resultLines.length > 0, 'should have result lines');
+    assert.ok(resultLines[0].text.startsWith('      '), 'result lines use plain indentation');
+  });
+
+  it('strips markdown links from invocation messages', () => {
+    const turn = makeTurn('do it', [
+      toolCallPart('View File', ToolCallStatus.Completed, 'Reading [auth.ts](file:///path/to/auth.ts)'),
+    ]);
+    const lines = renderTurnToLines(turn, 80);
+
+    const toolLine = lines.find(l => l.kind === 'tool-status')!;
+    assert.ok(toolLine.text.includes('auth.ts'), 'should include file name');
+    assert.ok(!toolLine.text.includes(']('), 'should not contain markdown link syntax');
+  });
+
+  it('collapses consecutive blank lines in tool result text', () => {
+    const part: IToolCallResponsePart = {
+      kind: ResponsePartKind.ToolCall,
+      toolCall: {
+        toolCallId: 'tc-1',
+        toolName: 'bash',
+        displayName: 'Bash',
+        status: ToolCallStatus.Completed,
+        confirmed: ToolCallConfirmationReason.UserAction,
+        content: [{ type: 'text' as any, text: 'line1\n\n\n\n\nline2\n\n\n' }],
+      },
+    } as IToolCallResponsePart;
+    const turn = makeTurn('run it', [part]);
+    const lines = renderTurnToLines(turn, 80);
+    const resultLines = lines.filter(l => l.kind === 'tool-result');
+    // Should have: line1, blank, line2 — no runs of 3+ blank lines
+    const texts = resultLines.map(l => l.text.trim());
+    let consecutive = 0;
+    for (const t of texts) {
+      consecutive = t === '' ? consecutive + 1 : 0;
+      assert.ok(consecutive <= 1, 'should not have more than 1 consecutive blank line');
+    }
   });
 
   it('renders turn error state', () => {
