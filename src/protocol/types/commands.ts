@@ -25,12 +25,17 @@ export type { IConfigPropertySchema, IConfigSchema, ISessionConfigPropertySchema
  * @see {@link /specification/lifecycle | Lifecycle} for the full handshake flow.
  */
 export interface IInitializeParams {
-	/** Protocol version the client speaks */
-	protocolVersion: number;
+	/**
+	 * Protocol versions the client is willing to speak, ordered from most
+	 * preferred to least preferred.
+	 */
+	protocolVersions: string[];
 	/** Unique client identifier */
 	clientId: string;
 	/** URIs to subscribe to during handshake */
 	initialSubscriptions?: URI[];
+	/** IETF BCP 47 language tag indicating the client's preferred locale */
+	locale?: string;
 }
 
 /**
@@ -40,14 +45,16 @@ export interface IInitializeParams {
  * error code `-32005` (`UnsupportedProtocolVersion`).
  */
 export interface IInitializeResult {
-	/** Protocol version the server speaks */
-	protocolVersion: number;
+	/** Protocol version selected by the server */
+	protocolVersion: string;
 	/** Current server sequence number */
 	serverSeq: number;
 	/** Snapshots for each `initialSubscriptions` URI */
 	snapshots: ISnapshot[];
 	/** Suggested default directory for remote filesystem browsing */
 	defaultDirectory?: URI;
+	/** Characters that should cause the client to issue a completions request */
+	completionTriggerCharacters?: string[];
 }
 
 // ─── reconnect ───────────────────────────────────────────────────────────────

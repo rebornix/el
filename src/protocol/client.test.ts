@@ -168,17 +168,37 @@ describe('AhpClient', () => {
       const sent = JSON.parse(transport.sent[0]!);
       assert.equal(sent.method, 'initialize');
       assert.equal(sent.params.clientId, 'test-client');
-      assert.equal(sent.params.protocolVersion, 1);
+      assert.deepEqual(sent.params.protocolVersions, ['0.1.0']);
       assert.deepEqual(sent.params.initialSubscriptions, ['agenthost:/root']);
 
       transport.simulateMessage({
         jsonrpc: '2.0',
         id: sent.id,
-        result: { protocolVersion: 1, serverSeq: 0, snapshots: [] },
+        result: { protocolVersion: '0.1.0', serverSeq: 0, snapshots: [] },
       });
 
       const result = await promise;
-      assert.equal(result.protocolVersion, 1);
+      assert.equal(result.protocolVersion, '0.1.0');
+    });
+
+    it('authenticate sends resource token', async () => {
+      const promise = client.authenticate({
+        resource: 'https://api.github.com',
+        token: 'token-123',
+      });
+
+      const sent = JSON.parse(transport.sent[0]!);
+      assert.equal(sent.method, 'authenticate');
+      assert.equal(sent.params.resource, 'https://api.github.com');
+      assert.equal(sent.params.token, 'token-123');
+
+      transport.simulateMessage({
+        jsonrpc: '2.0',
+        id: sent.id,
+        result: {},
+      });
+
+      await promise;
     });
 
     it('listSessions sends correct method', async () => {

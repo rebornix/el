@@ -5,6 +5,8 @@ import { connectAhpClient } from '../protocol/connect.js';
 import type { AhpClient } from '../protocol/client.js';
 import { SessionClientState } from '../protocol/session-client-state.js';
 import type { IAhpNotification, ISessionState, ISessionSummary } from '../protocol/types/index.js';
+import { SessionStatus } from '../protocol/types/index.js';
+import { authenticateDefaultAgentHostResource, isAuthRequiredError } from '../auth/agent-host-auth.js';
 import { handleSessionKey } from '../views/session-key-handler.js';
 import { handleSessionListKey } from '../views/session-list-key-model.js';
 import { getCreateSessionAgents } from '../views/create-session-model.js';
@@ -62,6 +64,7 @@ export async function runPiTuiInteractiveScaffold(options?: {
   let preferredProvider: string | undefined;
   let client: AhpClient | undefined;
   let disconnect: (() => void) | undefined;
+  let agentHostAuthenticated = false;
 
   startSpinner('Loading…');
   try {
@@ -83,6 +86,12 @@ export async function runPiTuiInteractiveScaffold(options?: {
     createProviders = agents.map((a) => a.provider);
     preferredProvider = createProviders[0];
     createFolderUri = defaultDirectory ?? createFolderUri;
+
+    try {
+      agentHostAuthenticated = await authenticateDefaultAgentHostResource(client, env);
+    } catch {
+      agentHostAuthenticated = false;
+    }
 
     const listed = await client.listSessions();
     sessions = listed.items;
@@ -117,7 +126,9 @@ export async function runPiTuiInteractiveScaffold(options?: {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[el] session list unavailable:', msg);
-    sessionListStatus = `Failed to load sessions: ${msg}`;
+    sessionListStatus = isAuthRequiredError(err)
+      ? 'Authentication required. Set EL_AGENT_HOST_TOKEN or sign in with gh auth login.'
+      : `Failed to load sessions: ${msg}`;
     selectedIndex = 0;
   } finally {
     stopSpinner();
@@ -221,19 +232,18 @@ export async function runPiTuiInteractiveScaffold(options?: {
     const cleanup = () => {
       stdin.off('keypress', onKeypress);
       if (stdin.isTTY) stdin.setRawMode(false);
+      stdin.pause();
       stopSpinner();
       disconnect?.();
       resolve();
     };
 
-    const openSelectedSession = async () => {
+    const openSessionSummary = async (summary: ISessionSummary) => {
       if (!client) {
         mode = 'session';
         render();
         return;
       }
-      const summary = sessions[selectedIndex - 1];
-      if (!summary) return;
 
       openingSessionResource = summary.resource;
       startSpinner(`Opening: ${toSingleLineTitle(summary.title, 36)}…`);
@@ -276,6 +286,12 @@ export async function runPiTuiInteractiveScaffold(options?: {
       }
     };
 
+    const openSelectedSession = async () => {
+      const summary = sessions[selectedIndex - 1];
+      if (!summary) return;
+      await openSessionSummary(summary);
+    };
+
     const createSelectedSession = async () => {
       if (!client) {
         mode = 'session';
@@ -283,11 +299,14 @@ export async function runPiTuiInteractiveScaffold(options?: {
         return;
       }
 
-      const provider = createProviders[createProviderIndex] ?? preferredProvider ?? sessions[0]?.provider ?? 'copilot';
+      const provider = createProviders[createProviderIndex] ?? preferredProvider ?? sessions[0]?.provider ?? 'copilotcli';
       const sessionUri = `${provider}:/${randomUUID()}`;
 
       startSpinner('Creating session…');
       try {
+        if (!agentHostAuthenticated) {
+          agentHostAuthenticated = await authenticateDefaultAgentHostResource(client, env);
+        }
         await client.createSession({
           session: sessionUri,
           provider,
@@ -296,21 +315,34 @@ export async function runPiTuiInteractiveScaffold(options?: {
 
         const listed = await client.listSessions();
         sessions = listed.items;
-        sessionListStatus = sessions.length === 0 ? 'No sessions yet. Select "Create new session".' : undefined;
         const createdIdx = sessions.findIndex((s) => s.resource === sessionUri);
-        selectedIndex = createdIdx >= 0 ? createdIdx + 1 : (sessions.length > 0 ? sessions.length : 0);
+        const createdSummary = sessions[createdIdx] ?? {
+          resource: sessionUri,
+          provider,
+          title: 'New session',
+          status: SessionStatus.Idle,
+          createdAt: Date.now(),
+          modifiedAt: Date.now(),
+          workingDirectory: createFolderUri || defaultDirectory,
+        };
+        if (createdIdx < 0) {
+          sessions = [createdSummary, ...sessions];
+        }
+        sessionListStatus = undefined;
+        selectedIndex = createdIdx >= 0 ? createdIdx + 1 : 1;
         mode = 'session-list';
         createFolderStatus = undefined;
 
-        if (selectedIndex > 0) {
-          stopSpinner();
-          await openSelectedSession();
-          return;
-        }
+        await openSessionSummary(createdSummary);
+        return;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        if (isAuthRequiredError(err)) {
+          createFolderStatus = 'Authentication required. Set EL_AGENT_HOST_TOKEN or sign in with gh auth login.';
+        } else {
+          createFolderStatus = `Failed to create session: ${msg}`;
+        }
         console.error('[el] failed to create session:', msg);
-        createFolderStatus = `Failed to create session: ${msg}`;
       } finally {
         stopSpinner();
         render();

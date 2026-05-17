@@ -12,7 +12,7 @@ import { NotificationType, type IProtocolNotification } from '../notifications.j
 // ─── Protocol Version Constants ──────────────────────────────────────────────
 
 /** The current protocol version that new code speaks. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = '0.1.0';
 
 /** The oldest protocol version the implementation maintains compatibility with. */
 export const MIN_PROTOCOL_VERSION = 1;

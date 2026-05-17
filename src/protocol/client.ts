@@ -12,6 +12,8 @@ import type {
   IFetchTurnsResult,
   IResourceListResult,
   ICreateSessionParams,
+  IAuthenticateParams,
+  IAuthenticateResult,
   ISubscribeParams,
   IFetchTurnsParams,
   IDispatchActionParams,
@@ -134,10 +136,14 @@ export class AhpClient extends EventEmitter {
    */
   initialize(clientId: string, initialSubscriptions?: URI[]): Promise<IInitializeResult> {
     return this.request('initialize', {
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersions: [PROTOCOL_VERSION],
       clientId,
       initialSubscriptions,
     });
+  }
+
+  authenticate(params: IAuthenticateParams): Promise<IAuthenticateResult> {
+    return this.request('authenticate', params);
   }
 
   subscribe(resource: URI): Promise<ISubscribeResult> {
